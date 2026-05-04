@@ -2,7 +2,7 @@
 
 **sparqy** is an OpenMP-parallel forward-time Wright–Fisher simulator for
 population genetics. It models mutation, selection, dominance, and
-recombination on multi-chromosome diploid genomes and is designed to scale
+recombination on (multi-chromosome) diploid genomes and is designed to scale
 from a laptop to many-core compute nodes without changing the model spec.
 
 The simulator is written in C++17, has no runtime dependencies beyond
@@ -29,7 +29,7 @@ exposes the full feature set.
 - **Compiled CDFs** for O(log R) weighted sampling of mutation locations
   across regions.
 - **Configurable per-generation statistics**, including mean fitness,
-  genetic load, realized masking bonus, exact `B`, segregating- and
+  genetic load, realized masking bonus, inbreeding load, segregating- and
   fixed-site counts, mutation histograms by type and chromosome, site
   frequency spectra (folded and unfolded), nucleotide diversity, expected
   heterozygosity, and mean pairwise haplotypic similarity under three
@@ -88,7 +88,7 @@ exposes the full feature set.
 ## Installation
 
 ```bash
-git clone <repository-url> sparqy
+git clone https://github.com/chris-a-talbot/sparqy sparqy
 cd sparqy
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
@@ -352,22 +352,6 @@ driven by `run_suite.py`. It covers four tracks:
   sizes too large for SLiM comparison.
 - `profile` — per-phase runtime breakdowns from `--profile` runs.
 
-A local smoke test that exercises every track on tiny scenarios:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-
-python3 validation_suite/run_suite.py run \
-    --preset       smoke \
-    --results-dir  validation_suite/results/smoke_local \
-    --sparqy-bin   ./build/sparqy \
-    --slim-bin     /path/to/slim
-
-python3 validation_suite/plot_results.py \
-    validation_suite/results/smoke_local
-```
-
 Larger presets (`full`, `extreme`) are intended for HPC nodes; wrapper
 scripts for SLURM-based clusters are provided as
 `validation_suite/perlmutter_full_suite.sh` and
@@ -385,28 +369,6 @@ memory is recorded automatically on Linux via `/proc/<pid>/status`.
 - Because each thread RNG is reached by a `long_jump()` of 2^192 draws,
   thread streams are guaranteed not to overlap for any realistic
   simulation length.
-
-## Performance
-
-The table below shows representative wall-clock cost per generation on a
-laptop-class system (Apple Silicon, 4 performance cores). Values are in
-milliseconds per generation, single chromosome, `L = 10^6` bp,
-`μ = 10^-8`, `ρ = 1.0`, `s = -0.01`, `h = 0.5`, statistics disabled.
-
-| `N`     | sparqy `t=1` | `t=2` | `t=4`     | `t=8`  | SLiM 5.1 |
-|---------|--------------|-------|-----------|--------|----------|
-| 5 000   | 0.42         | 0.31  | **0.29**  | 0.39   | 0.66     |
-| 10 000  | 0.77         | 0.56  | **0.47**  | 0.59   | 1.43     |
-| 20 000  | 1.57         | 1.08  | **0.87**  | 1.03   | 3.36     |
-| 50 000  | 3.96         | 3.64  | **2.03**  | 2.45   | 15.5     |
-
-Eight threads regresses on this hardware because the chip has four
-performance cores and four efficiency cores; the efficiency cores reduce
-mean throughput. On homogeneous server CPUs the effective ceiling is much
-higher.
-
-For larger populations and many-core scaling, see the artifacts produced
-by the `scaling` and `profile` validation-suite tracks.
 
 ## Architecture overview
 
@@ -431,46 +393,7 @@ phases: metadata reservation, alias-table construction, recyclable-ID
 distribution, parallel reproduction with fused fitness, ID reclamation,
 prefix-sum over offsets, parallel block copy, thread-local counting,
 serial count merge, parallel classification of mutations as lost / fixed
-/ surviving, and parallel reductions. The full ordering and rationale
-for the serial steps are documented inline in `src/sparqy.cpp`.
-
-## Repository layout
-
-```text
-sparqy/
-├── CONFIG_REFERENCE.md              exhaustive config-language reference
-├── CMakeLists.txt
-├── README.md
-├── examples/
-│   ├── complex_dfe_showcase.sparqy    richer multi-DFE / multi-region example
-│   ├── full_power_model.sparqy        worked full biological model
-│   ├── minimal_additive.sparqy        tiny additive-only smoke example
-│   ├── minimal_fixed_dominance.sparqy tiny fixed-dominance smoke example
-│   ├── stats_schedule_showcase.sparqy stats-schedule language showcase
-│   └── slim/
-│       ├── README.md                  paired SLiM example notes
-│       ├── complex_dfe_showcase.slim
-│       ├── full_power_model.slim
-│       ├── minimal_additive.slim
-│       ├── minimal_fixed_dominance.slim
-│       └── stats_schedule_showcase.slim
-├── src/
-│   ├── alias_sampler.hpp              Vose, PSA, and PSA+ builders
-│   ├── config_loader.{hpp,cpp}        --config parser
-│   ├── dist_spec.hpp                  parametric DFE distributions
-│   ├── dominance_spec.hpp             dominance models
-│   ├── main.cpp                       CLI entry point
-│   ├── rng.hpp                        xoshiro256** with long_jump
-│   ├── sparqy.{hpp,cpp}               public API and generation loop
-│   ├── sparqy_compile.cpp             model-spec → compiled-model
-│   ├── sparqy_statistics.cpp          statistics planning and reductions
-│   └── sparse_count_map.hpp           open-addressed uint32→uint32 map
-├── tests/
-│   ├── alias_bench.cpp                alias-builder microbenchmark
-│   ├── config_loader_bench.cpp        config-loader microbenchmark
-│   └── config_loader_test.cpp         config parser and scheduler tests
-└── validation_suite/                  cross-simulator validation tooling
-```
+/ surviving, and parallel reductions.
 
 ## Acknowledgments
 
