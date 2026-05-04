@@ -1,6 +1,6 @@
 # sparqy
 
-**sparqy** is an OpenMP-parallel forward-time Wright–Fisher simulator for
+**sparqy** (SPArse Recombination, QuicklY) is an OpenMP-parallel forward-time Wright–Fisher simulator for
 population genetics. It models mutation, selection, dominance, and
 recombination on (multi-chromosome) diploid genomes and is designed to scale
 from a laptop to many-core compute nodes without changing the model spec.
