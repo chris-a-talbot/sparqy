@@ -1,0 +1,63 @@
+// Paired with examples/minimal_additive.sparqy.
+// Emits the same statistic names and tab-separated columns as sparqy config mode.
+
+initialize() {
+    initializeMutationType("m1", 0.5, "f", -0.01);
+    initializeGenomicElementType("g1", m1, 1.0);
+
+    initializeChromosome(1, 500, type="A");
+    initializeMutationRate(5e-6);
+    initializeGenomicElement(g1, 0, 499);
+    initializeRecombinationRate(0.0005);
+}
+
+1 early() {
+    sim.addSubpop("p1", 40);
+    defineGlobal("t_start", clock("mono"));
+    defineGlobal("last_emit_wall", 0.0);
+    catn("generation\tdt_sec\tcumul_sec\tstatistic\tmetric\tscalar_value\tby_type\tby_chromosome\tunfolded_sfs\tfolded_sfs");
+}
+
+2:13 early() {
+    generation = sim.cycle - 1;
+    if (generation != 12)
+        return;
+
+    wall = clock("mono") - t_start;
+    dt = wall - last_emit_wall;
+    last_emit_wall = wall;
+
+    fixedFitnessFactor = 1.0;
+    for (sub in sim.substitutions)
+        fixedFitnessFactor = fixedFitnessFactor * (1.0 + sub.selectionCoeff);
+
+    meanFitness = mean(p1.cachedFitness(NULL)) * fixedFitnessFactor;
+    nSeg = size(sim.mutations);
+
+    catn(paste(c(
+        generation,
+        format("%.6f", dt),
+        format("%.6f", wall),
+        "mean_fitness",
+        "",
+        format("%.10f", meanFitness),
+        "",
+        "",
+        "",
+        ""
+    ), sep="\t"));
+    catn(paste(c(
+        generation,
+        format("%.6f", dt),
+        format("%.6f", wall),
+        "n_seg",
+        "",
+        nSeg,
+        "",
+        "",
+        "",
+        ""
+    ), sep="\t"));
+
+    sim.simulationFinished();
+}

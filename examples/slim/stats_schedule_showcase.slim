@@ -1,0 +1,288 @@
+// Paired with examples/stats_schedule_showcase.sparqy.
+// Demonstrates the same periodic statistics schedule surface in SLiM 5.x.
+
+function (void)cacheWholeGenomeMutationSets(void) {
+    inds = p1.individuals;
+    for (indIndex in 0:(size(inds) - 1)) {
+        ind = inds[indIndex];
+        ind.setValue(
+            "wholeGenomeMuts0",
+            sortBy(
+                unique(
+                    ind.haplosomesForChromosomes(NULL, 0, includeNulls=F).mutations,
+                    preserveOrder=F
+                ),
+                "id"
+            )
+        );
+        ind.setValue(
+            "wholeGenomeMuts1",
+            sortBy(
+                unique(
+                    ind.haplosomesForChromosomes(NULL, 1, includeNulls=F).mutations,
+                    preserveOrder=F
+                ),
+                "id"
+            )
+        );
+    }
+}
+
+function (object<Mutation>)cachedWholeGenomeMutations(object<Individual>$ ind, integer$ hapIndex) {
+    if (hapIndex == 0)
+        return ind.getValue("wholeGenomeMuts0");
+    return ind.getValue("wholeGenomeMuts1");
+}
+
+function (float$)pairwiseScore(object<Mutation> mutsA, object<Mutation> mutsB, string$ metric) {
+    sizeA = size(mutsA);
+    sizeB = size(mutsB);
+    if ((sizeA == 0) & (sizeB == 0))
+        return 1.0;
+
+    intersection = 0;
+    if (sizeA > 0)
+        intersection = sum(match(mutsA, mutsB) >= 0);
+
+    if (metric == "jaccard") {
+        unionSize = sizeA + sizeB - intersection;
+        if (unionSize == 0)
+            return 1.0;
+        return intersection / unionSize;
+    }
+    if (metric == "dice") {
+        denom = sizeA + sizeB;
+        if (denom == 0)
+            return 1.0;
+        return (2.0 * intersection) / denom;
+    }
+
+    minSize = min(sizeA, sizeB);
+    if (minSize == 0)
+        return 0.0;
+    return intersection / minSize;
+}
+
+function (float$)meanPairwiseSimilarityExact(string$ metric) {
+    inds = p1.individuals;
+    genomeCount = size(inds) * 2;
+    if (genomeCount < 2)
+        return 1.0;
+
+    cacheWholeGenomeMutationSets();
+
+    total = 0.0;
+    pairCount = 0;
+    for (a in 0:(size(inds) - 1)) {
+        indA = inds[a];
+        mutsA0 = cachedWholeGenomeMutations(indA, 0);
+        mutsA1 = cachedWholeGenomeMutations(indA, 1);
+
+        total = total + pairwiseScore(mutsA0, mutsA1, metric);
+        pairCount = pairCount + 1;
+
+        if (a < (size(inds) - 1)) {
+            for (b in (a + 1):(size(inds) - 1)) {
+                indB = inds[b];
+                mutsB0 = cachedWholeGenomeMutations(indB, 0);
+                mutsB1 = cachedWholeGenomeMutations(indB, 1);
+
+                total = total + pairwiseScore(mutsA0, mutsB0, metric);
+                total = total + pairwiseScore(mutsA0, mutsB1, metric);
+                total = total + pairwiseScore(mutsA1, mutsB0, metric);
+                total = total + pairwiseScore(mutsA1, mutsB1, metric);
+                pairCount = pairCount + 4;
+            }
+        }
+    }
+
+    return total / pairCount;
+}
+
+initialize() {
+    initializeMutationType("m1", 0.5, "f", -0.01);
+    initializeGenomicElementType("g1", m1, 1.0);
+
+    initializeChromosome(1, 600, type="A");
+    initializeMutationRate(1e-5);
+    initializeGenomicElement(g1, 0, 599);
+    initializeRecombinationRate(0.0005);
+}
+
+1 early() {
+    sim.addSubpop("p1", 24);
+    defineGlobal("t_start", clock("mono"));
+    defineGlobal("last_emit_wall", 0.0);
+    catn("generation\tdt_sec\tcumul_sec\tstatistic\tmetric\tscalar_value\tby_type\tby_chromosome\tunfolded_sfs\tfolded_sfs");
+}
+
+2:25 early() {
+    generation = sim.cycle - 1;
+
+    wall = clock("mono") - t_start;
+    dt = wall - last_emit_wall;
+    last_emit_wall = wall;
+
+    fixedFitnessFactor = 1.0;
+    for (sub in sim.substitutions)
+        fixedFitnessFactor = fixedFitnessFactor * (1.0 + sub.selectionCoeff);
+    meanFitness = mean(p1.cachedFitness(NULL)) * fixedFitnessFactor;
+
+    catn(paste(c(
+        generation,
+        format("%.6f", dt),
+        format("%.6f", wall),
+        "mean_fitness",
+        "",
+        format("%.10f", meanFitness),
+        "",
+        "",
+        "",
+        ""
+    ), sep="\t"));
+
+    if ((generation % 6) == 0) {
+        geneticLoad = 1.0 - meanFitness;
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "genetic_load",
+            "",
+            format("%.10f", geneticLoad),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if ((generation == 12) | (generation == 24)) {
+        nSeg = size(sim.mutations);
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "n_seg",
+            "",
+            nSeg,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (generation <= 4) {
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "exact_B",
+            "",
+            format("%.10f", 0.0),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (generation >= 20) {
+        pairwiseJaccard = meanPairwiseSimilarityExact("jaccard");
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "pairwise_similarity",
+            "jaccard",
+            format("%.10f", pairwiseJaccard),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (((generation % 5) == 0) & (generation <= 20)) {
+        nFixed = size(sim.substitutions);
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "n_fixed",
+            "",
+            nFixed,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if ((generation >= 18) & (((generation - 18) % 2) == 0)) {
+        genomeWords = size(p1.haplosomes.mutations);
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "genome_words",
+            "",
+            genomeWords,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if ((generation >= 8) & (generation <= 10)) {
+        muts = sim.mutations;
+        sum2pq = 0.0;
+        if (size(muts) > 0) {
+            freqs = sim.mutationFrequencies(NULL, muts);
+            sum2pq = sum(2.0 * freqs * (1.0 - freqs));
+        }
+        pi = sum2pq / 600.0;
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "nucleotide_diversity",
+            "",
+            format("%.10f", pi),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if ((generation >= 9) & (generation <= 18) & (((generation - 9) % 3) == 0)) {
+        muts = sim.mutations;
+        nSegForEh = size(muts);
+        sum2pq = 0.0;
+        if (nSegForEh > 0) {
+            freqs = sim.mutationFrequencies(NULL, muts);
+            sum2pq = sum(2.0 * freqs * (1.0 - freqs));
+        }
+        expectedH = 0.0;
+        if (nSegForEh > 0)
+            expectedH = sum2pq / nSegForEh;
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "expected_heterozygosity",
+            "",
+            format("%.10f", expectedH),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (generation == 24)
+        sim.simulationFinished();
+}

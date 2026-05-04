@@ -1,0 +1,52 @@
+# Minimal fixed-dominance smoke test:
+# still one mutation type / region type / chromosome, but with a non-additive h.
+
+constants <- list(
+  pop_size = 60,
+  generation_count = 15,
+  mutation_rate = 2e-6,
+  recombination_rate = 0.4,
+  run_seed = 23,
+  thread_count = 2
+)
+
+config <- list(
+  N = pop_size,
+  G = generation_count,
+  mu = mutation_rate,
+  rho = recombination_rate,
+  seed = run_seed,
+  threads = thread_count,
+  runtime = list(
+    alias_builder = auto,
+    profile = FALSE
+  ),
+  mutation_types = list(
+    mildly_deleterious = list(
+      selection = normal(-0.008, 0.002, -0.03, 0.0),
+      dominance = fixed(0.25)
+    )
+  ),
+  region_types = list(
+    whole_genome = list(
+      mutation_scale = 1.0,
+      weights = c(mildly_deleterious = 1)
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 800,
+      recombination_intervals = list(
+        interval(0, 800, 1.0)
+      ),
+      regions = list(
+        region(whole_genome, 0, 800)
+      )
+    )
+  )
+)
+
+stats <- list(
+  every(5, mean_fitness, genetic_load),
+  at(15, n_seg, genome_words)
+)

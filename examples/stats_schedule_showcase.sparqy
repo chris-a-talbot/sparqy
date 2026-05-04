@@ -1,0 +1,57 @@
+# Compact showcase for the full periodic-stats schedule language.
+
+constants <- list(
+  pop_size = 24,
+  generation_count = 24,
+  mutation_rate = 1e-5,
+  recombination_rate = 0.3,
+  run_seed = 101,
+  thread_count = 1
+)
+
+config <- list(
+  N = pop_size,
+  G = generation_count,
+  mu = mutation_rate,
+  rho = recombination_rate,
+  seed = run_seed,
+  threads = thread_count,
+  runtime = list(
+    alias_builder = auto
+  ),
+  mutation_types = list(
+    deleterious = list(
+      selection = constant(-0.01),
+      dominance = additive()
+    )
+  ),
+  region_types = list(
+    whole_genome = list(
+      mutation_scale = 1.0,
+      weights = c(deleterious = 1)
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 600,
+      recombination_intervals = list(
+        interval(0, 600, 1.0)
+      ),
+      regions = list(
+        region(whole_genome, 0, 600)
+      )
+    )
+  )
+)
+
+stats <- list(
+  always(mean_fitness),
+  every(6, genetic_load),
+  at(c(12, 24), n_seg),
+  up_to(end = 4, exact_B),
+  at_after(start = 20, pairwise_similarity(jaccard)),
+  every_up_to(step = 5, end = 20, n_fixed),
+  every_at_after(step = 2, start = 18, genome_words),
+  range(start = 8, end = 10, nucleotide_diversity),
+  every_range(step = 3, start = 9, end = 18, expected_heterozygosity)
+)

@@ -1,0 +1,93 @@
+// Paired with examples/minimal_fixed_dominance.sparqy.
+// Mirrors the same model and emits sparqy-style TSV statistics.
+
+initialize() {
+    mildDelScript = "return pmax(-0.03, pmin(0.0, rnorm(1, -0.008, 0.002)));";
+    initializeMutationType("m1", 0.25, "s", mildDelScript);
+    initializeGenomicElementType("g1", m1, 1.0);
+
+    initializeChromosome(1, 800, type="A");
+    initializeMutationRate(2e-6);
+    initializeGenomicElement(g1, 0, 799);
+    initializeRecombinationRate(0.0005);
+}
+
+1 early() {
+    sim.addSubpop("p1", 60);
+    defineGlobal("t_start", clock("mono"));
+    defineGlobal("last_emit_wall", 0.0);
+    catn("generation\tdt_sec\tcumul_sec\tstatistic\tmetric\tscalar_value\tby_type\tby_chromosome\tunfolded_sfs\tfolded_sfs");
+}
+
+2:16 early() {
+    generation = sim.cycle - 1;
+    if ((generation % 5) != 0)
+        return;
+
+    wall = clock("mono") - t_start;
+    dt = wall - last_emit_wall;
+    last_emit_wall = wall;
+
+    fixedFitnessFactor = 1.0;
+    for (sub in sim.substitutions)
+        fixedFitnessFactor = fixedFitnessFactor * (1.0 + sub.selectionCoeff);
+
+    meanFitness = mean(p1.cachedFitness(NULL)) * fixedFitnessFactor;
+    geneticLoad = 1.0 - meanFitness;
+
+    catn(paste(c(
+        generation,
+        format("%.6f", dt),
+        format("%.6f", wall),
+        "mean_fitness",
+        "",
+        format("%.10f", meanFitness),
+        "",
+        "",
+        "",
+        ""
+    ), sep="\t"));
+    catn(paste(c(
+        generation,
+        format("%.6f", dt),
+        format("%.6f", wall),
+        "genetic_load",
+        "",
+        format("%.10f", geneticLoad),
+        "",
+        "",
+        "",
+        ""
+    ), sep="\t"));
+
+    if (generation == 15) {
+        nSeg = size(sim.mutations);
+        genomeWords = size(p1.haplosomes.mutations);
+
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "n_seg",
+            "",
+            nSeg,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "genome_words",
+            "",
+            genomeWords,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        sim.simulationFinished();
+    }
+}

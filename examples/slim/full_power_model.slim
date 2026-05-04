@@ -1,0 +1,366 @@
+// Paired with examples/full_power_model.sparqy.
+// Uses SLiM 5.x script-based DFEs and dominance callbacks to mirror the sparqy example.
+// Pairwise similarity is estimated from sampled whole-genome haplotype pairs for runtime practicality.
+
+function (void)cacheWholeGenomeMutationSets(void) {
+    inds = p1.individuals;
+    for (indIndex in 0:(size(inds) - 1)) {
+        ind = inds[indIndex];
+        ind.setValue(
+            "wholeGenomeMuts0",
+            sortBy(
+                unique(
+                    ind.haplosomesForChromosomes(NULL, 0, includeNulls=F).mutations,
+                    preserveOrder=F
+                ),
+                "id"
+            )
+        );
+        ind.setValue(
+            "wholeGenomeMuts1",
+            sortBy(
+                unique(
+                    ind.haplosomesForChromosomes(NULL, 1, includeNulls=F).mutations,
+                    preserveOrder=F
+                ),
+                "id"
+            )
+        );
+    }
+}
+
+function (object<Mutation>)cachedWholeGenomeMutations(object<Individual>$ ind, integer$ hapIndex) {
+    if (hapIndex == 0)
+        return ind.getValue("wholeGenomeMuts0");
+    return ind.getValue("wholeGenomeMuts1");
+}
+
+function (float$)pairwiseScore(object<Mutation> mutsA, object<Mutation> mutsB, string$ metric) {
+    sizeA = size(mutsA);
+    sizeB = size(mutsB);
+    if ((sizeA == 0) & (sizeB == 0))
+        return 1.0;
+
+    intersection = 0;
+    if (sizeA > 0)
+        intersection = sum(match(mutsA, mutsB) >= 0);
+
+    if (metric == "jaccard") {
+        unionSize = sizeA + sizeB - intersection;
+        if (unionSize == 0)
+            return 1.0;
+        return intersection / unionSize;
+    }
+    if (metric == "dice") {
+        denom = sizeA + sizeB;
+        if (denom == 0)
+            return 1.0;
+        return (2.0 * intersection) / denom;
+    }
+
+    minSize = min(sizeA, sizeB);
+    if (minSize == 0) {
+        if ((sizeA == 0) & (sizeB == 0))
+            return 1.0;
+        return 0.0;
+    }
+    return intersection / minSize;
+}
+
+function (float$)sampledPairwiseSimilarityFromCache(string$ metric, integer$ samplePairs) {
+    inds = p1.individuals;
+    genomeCount = size(inds) * 2;
+    if (genomeCount < 2)
+        return 1.0;
+
+    genomeIDs = 0:(genomeCount - 1);
+    total = 0.0;
+    for (draw in 1:samplePairs) {
+        pair = sample(genomeIDs, 2, replace=F);
+
+        genomeA = pair[0];
+        genomeB = pair[1];
+
+        indA = inds[asInteger(floor(genomeA / 2))];
+        indB = inds[asInteger(floor(genomeB / 2))];
+        mutsA = cachedWholeGenomeMutations(indA, asInteger(genomeA % 2));
+        mutsB = cachedWholeGenomeMutations(indB, asInteger(genomeB % 2));
+
+        total = total + pairwiseScore(mutsA, mutsB, metric);
+    }
+    return total / samplePairs;
+}
+
+function (float$)dominanceForMutation(object<Mutation>$ mut) {
+    if (mut.mutationType == m1)
+        return mut.getValue("dom");
+    if (mut.mutationType == m2)
+        return mut.getValue("dom");
+    return 0.5;
+}
+
+mutation(m1) {
+    mut.setValue("dom", pmax(0.0, pmin(0.5, 0.5 - 5.0 * mut.selectionCoeff)));
+    return T;
+}
+
+mutationEffect(m1) {
+    if (homozygous)
+        return 1.0 + mut.selectionCoeff;
+    return 1.0 + mut.getValue("dom") * mut.selectionCoeff;
+}
+
+mutation(m2) {
+    mut.setValue("dom", rbeta(1, 2.0, 5.0));
+    return T;
+}
+
+mutationEffect(m2) {
+    if (homozygous)
+        return 1.0 + mut.selectionCoeff;
+    return 1.0 + mut.getValue("dom") * mut.selectionCoeff;
+}
+
+initialize() {
+    deleteriousScript = "return pmax(-0.999999999, pmin(0.0, -rgamma(1, 0.02, 0.3)));";
+    weakBeneficialScript = "return pmax(0.0, pmin(1.0, rexp(1, 0.005)));";
+
+    initializeMutationType("m1", 0.5, "s", deleteriousScript);
+    initializeMutationType("m2", 0.5, "s", weakBeneficialScript);
+    initializeMutationType("m3", 0.5, "f", 0.0);
+
+    initializeGenomicElementType("g1", c(m1, m2, m3), c(8.0, 1.0, 1.0));
+    initializeGenomicElementType("g2", c(m1, m3), c(1.0, 4.0));
+    initializeGenomicElementType("g3", c(m1, m2), c(2.0, 1.0));
+
+    initializeChromosome(1, 100000, type="A");
+    initializeMutationRate(c(2.5e-7, 5.0e-8, 4.0e-7), c(19999, 79999, 99999));
+    initializeGenomicElement(g1, 0, 19999);
+    initializeGenomicElement(g2, 20000, 79999);
+    initializeGenomicElement(g3, 80000, 99999);
+    initializeRecombinationRate(
+        c(2.9940119760e-7, 5.9880239521e-6, 1.1976047904e-6),
+        c(9999, 59999, 99999)
+    );
+
+    initializeChromosome(2, 50000, type="A");
+    initializeMutationRate(c(5.0e-8, 2.5e-7, 5.0e-8), c(9999, 39999, 49999));
+    initializeGenomicElement(g2, 0, 9999);
+    initializeGenomicElement(g1, 10000, 39999);
+    initializeGenomicElement(g2, 40000, 49999);
+    initializeRecombinationRate(2.9940119760e-6);
+}
+
+1 early() {
+    sim.addSubpop("p1", 1000);
+    defineGlobal("t_start", clock("mono"));
+    defineGlobal("last_emit_wall", 0.0);
+    defineGlobal("PAIRWISE_SAMPLE_PAIRS", 10000);
+    catn("generation\tdt_sec\tcumul_sec\tstatistic\tmetric\tscalar_value\tby_type\tby_chromosome\tunfolded_sfs\tfolded_sfs");
+}
+
+2:101 early() {
+    generation = sim.cycle - 1;
+
+    needMeanUpTo = (generation <= 5);
+    needEveryTen = ((generation % 10) == 0);
+    needGenomeWords = (generation >= 20) & (generation <= 80) & (((generation - 20) % 20) == 0);
+    needPairwise = (generation >= 90);
+    needFinalVectors = (generation == 100);
+
+    if (!(needMeanUpTo | needEveryTen | needGenomeWords | needPairwise | needFinalVectors))
+        return;
+
+    wall = clock("mono") - t_start;
+    dt = wall - last_emit_wall;
+    last_emit_wall = wall;
+
+    if (needMeanUpTo | needEveryTen) {
+        fixedFitnessFactor = 1.0;
+        for (sub in sim.substitutions)
+            fixedFitnessFactor = fixedFitnessFactor * (1.0 + sub.selectionCoeff);
+        meanFitness = mean(p1.cachedFitness(NULL)) * fixedFitnessFactor;
+    }
+
+    if (needMeanUpTo) {
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "mean_fitness",
+            "",
+            format("%.10f", meanFitness),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (needEveryTen) {
+        geneticLoad = 1.0 - meanFitness;
+        muts = sim.mutations;
+        nSeg = size(muts);
+        exactB = 0.0;
+
+        if (nSeg > 0) {
+            freqs = sim.mutationFrequencies(NULL, muts);
+            for (k in 0:(nSeg - 1)) {
+                heterozygosity = 2.0 * freqs[k] * (1.0 - freqs[k]);
+                exactB = exactB
+                    + muts[k].selectionCoeff * (0.5 - dominanceForMutation(muts[k])) * heterozygosity;
+            }
+        }
+
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "genetic_load",
+            "",
+            format("%.10f", geneticLoad),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "exact_B",
+            "",
+            format("%.10f", exactB),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "n_seg",
+            "",
+            nSeg,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (needGenomeWords) {
+        genomeWords = size(p1.haplosomes.mutations);
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "genome_words",
+            "",
+            genomeWords,
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (needPairwise) {
+        cacheWholeGenomeMutationSets();
+        pairwiseJaccard = sampledPairwiseSimilarityFromCache("jaccard", PAIRWISE_SAMPLE_PAIRS);
+        pairwiseDice = sampledPairwiseSimilarityFromCache("dice", PAIRWISE_SAMPLE_PAIRS);
+        pairwiseOverlap = sampledPairwiseSimilarityFromCache("overlap", PAIRWISE_SAMPLE_PAIRS);
+
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "pairwise_similarity",
+            "jaccard",
+            format("%.10f", pairwiseJaccard),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "pairwise_similarity",
+            "dice",
+            format("%.10f", pairwiseDice),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "pairwise_similarity",
+            "overlap",
+            format("%.10f", pairwiseOverlap),
+            "",
+            "",
+            "",
+            ""
+        ), sep="\t"));
+    }
+
+    if (needFinalVectors) {
+        muts = sim.mutations;
+        nSegFinal = size(muts);
+        totalHaps = 2 * p1.individualCount;
+        typeCounts = rep(0, 3);
+        chromCounts = rep(0, 2);
+        unfolded = rep(0, totalHaps + 1);
+        folded = rep(0, p1.individualCount + 1);
+
+        if (nSegFinal > 0) {
+            freqs = sim.mutationFrequencies(NULL, muts);
+            copyNums = asInteger(round(freqs * totalHaps));
+            for (k in 0:(nSegFinal - 1)) {
+                typeCounts[muts[k].mutationType.id - 1] = typeCounts[muts[k].mutationType.id - 1] + 1;
+                chromCounts[muts[k].chromosome.id - 1] = chromCounts[muts[k].chromosome.id - 1] + 1;
+
+                copy = copyNums[k];
+                if ((copy > 0) & (copy < totalHaps)) {
+                    unfolded[copy] = unfolded[copy] + 1;
+                    minor = copy;
+                    if ((totalHaps - copy) < minor)
+                        minor = totalHaps - copy;
+                    folded[minor] = folded[minor] + 1;
+                }
+            }
+        }
+
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "mutation_histogram",
+            "",
+            "",
+            paste(typeCounts, sep=","),
+            paste(chromCounts, sep=","),
+            "",
+            ""
+        ), sep="\t"));
+        catn(paste(c(
+            generation,
+            format("%.6f", dt),
+            format("%.6f", wall),
+            "site_frequency_spectrum",
+            "",
+            "",
+            "",
+            "",
+            paste(unfolded, sep=","),
+            paste(folded, sep=",")
+        ), sep="\t"));
+        sim.simulationFinished();
+    }
+}

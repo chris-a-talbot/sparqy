@@ -1,0 +1,51 @@
+# Minimal additive-only smoke test:
+# one mutation type, one region type, one chromosome.
+
+constants <- list(
+  pop_size = 40,
+  generation_count = 12,
+  mutation_rate = 5e-6,
+  recombination_rate = 0.25,
+  run_seed = 11,
+  thread_count = 1
+)
+
+config <- list(
+  N = pop_size,
+  G = generation_count,
+  mu = mutation_rate,
+  rho = recombination_rate,
+  seed = run_seed,
+  threads = thread_count,
+  runtime = list(
+    alias_builder = auto,
+    profile = FALSE
+  ),
+  mutation_types = list(
+    deleterious = list(
+      selection = constant(-0.01),
+      dominance = additive()
+    )
+  ),
+  region_types = list(
+    whole_genome = list(
+      mutation_scale = 1.0,
+      weights = c(deleterious = 1)
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 500,
+      recombination_intervals = list(
+        interval(0, 500, 1.0)
+      ),
+      regions = list(
+        region(whole_genome, 0, 500)
+      )
+    )
+  )
+)
+
+stats <- list(
+  at(12, mean_fitness, n_seg)
+)

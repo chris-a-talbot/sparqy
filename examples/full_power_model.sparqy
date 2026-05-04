@@ -1,0 +1,87 @@
+# Full-featured sparqy model in the R-style config language.
+
+constants <- list(
+  pop_size = 1000,
+  generation_count = 100,
+  mutation_rate = 1e-7,
+  recombination_rate = 0.5,
+  run_seed = 42,
+  thread_count = 0,
+  default_alias_builder = "auto",
+  default_profile = FALSE
+)
+
+config <- list(
+  N = pop_size,
+  G = generation_count,
+  mu = mutation_rate,
+  rho = recombination_rate,
+  seed = run_seed,
+  threads = thread_count,
+  runtime = list(
+    alias_builder = default_alias_builder,
+    profile = default_profile
+  ),
+  mutation_types = list(
+    deleterious = list(
+      selection = gamma(-0.02, 0.3, -0.999999999, 0.0),
+      dominance = linear_from_s(0.5, -5.0, 0.0, 0.5)
+    ),
+    weak_beneficial = list(
+      selection = exponential(0.005, 0.0, 1.0),
+      dominance = distributed(beta(2.0, 5.0, 0.0, 1.0))
+    ),
+    neutral = list(
+      selection = constant(0.0),
+      dominance = additive()
+    )
+  ),
+  region_types = list(
+    exon = list(
+      mutation_scale = 2.5,
+      weights = c(deleterious = 8, weak_beneficial = 1, neutral = 1)
+    ),
+    intron = list(
+      mutation_scale = 0.5,
+      weights = c(deleterious = 1, neutral = 4)
+    ),
+    hotspot = list(
+      mutation_scale = 4.0,
+      weights = c(deleterious = 2, weak_beneficial = 1)
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 100000,
+      recombination_intervals = list(
+        interval(0, 10000, 0.1),
+        interval(10000, 60000, 2.0),
+        interval(60000, 100000, 0.4)
+      ),
+      regions = list(
+        region(exon, 0, 20000),
+        region(intron, 20000, 80000),
+        region(hotspot, 80000, 100000)
+      )
+    ),
+    chr2 = list(
+      length = 50000,
+      recombination_intervals = list(
+        interval(0, 50000, 1.0)
+      ),
+      regions = list(
+        region(intron, 0, 10000),
+        region(exon, 10000, 40000),
+        region(intron, 40000, 50000)
+      )
+    )
+  )
+)
+
+stats <- list(
+  up_to(end = 5, mean_fitness),
+  every(10, genetic_load, exact_B, n_seg),
+  every_range(step = 20, start = 20, end = 80, genome_words),
+  at(100, mutation_histogram, site_frequency_spectrum),
+  at_after(start = 90, pairwise_similarity(jaccard), pairwise_similarity(dice), pairwise_similarity(overlap))
+)

@@ -1,0 +1,110 @@
+# Richer showcase of multiple DFE builders, dominance modes, region types,
+# and chromosomes.
+
+constants <- list(
+  pop_size = 200,
+  generation_count = 40,
+  mutation_rate = 8e-7,
+  recombination_rate = 0.8,
+  run_seed = 2024,
+  thread_count = 0,
+  default_alias_builder = "auto"
+)
+
+config <- list(
+  N = pop_size,
+  G = generation_count,
+  mu = mutation_rate,
+  rho = recombination_rate,
+  seed = run_seed,
+  threads = thread_count,
+  runtime = list(
+    alias_builder = default_alias_builder,
+    profile = FALSE
+  ),
+  mutation_types = list(
+    neutral = list(
+      selection = constant(0.0),
+      dominance = additive()
+    ),
+    weak_del = list(
+      selection = normal(-0.005, 0.002, -0.03, 0.0),
+      dominance = fixed(0.35)
+    ),
+    strong_del = list(
+      selection = gamma(-0.03, 0.4, -0.999999999, 0.0),
+      dominance = linear_from_s(0.45, -3.5, 0.05, 0.9)
+    ),
+    mixed_effect = list(
+      selection = uniform(-0.015, 0.015, -0.015, 0.015),
+      dominance = additive()
+    ),
+    beneficial_tail = list(
+      selection = exponential(0.01, 0.0, 0.15),
+      dominance = distributed(beta(2.0, 6.0, 0.0, 1.0))
+    ),
+    beta_beneficial = list(
+      selection = beta(2.0, 5.0, 0.0, 1.0),
+      dominance = fixed(0.7)
+    )
+  ),
+  region_types = list(
+    exon = list(
+      mutation_scale = 2.0,
+      weights = c(
+        weak_del = 4,
+        strong_del = 3,
+        beneficial_tail = 1,
+        neutral = 1
+      )
+    ),
+    intron = list(
+      mutation_scale = 0.6,
+      weights = c(
+        weak_del = 2,
+        mixed_effect = 1,
+        neutral = 5
+      )
+    ),
+    hotspot = list(
+      mutation_scale = 3.5,
+      weights = c(
+        beneficial_tail = 2,
+        beta_beneficial = 2,
+        mixed_effect = 1
+      )
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 120000,
+      recombination_intervals = list(
+        interval(0, 20000, 0.2),
+        interval(20000, 80000, 1.8),
+        interval(80000, 120000, 0.5)
+      ),
+      regions = list(
+        region(exon, 0, 30000),
+        region(intron, 30000, 90000),
+        region(hotspot, 90000, 120000)
+      )
+    ),
+    chr2 = list(
+      length = 70000,
+      recombination_intervals = list(
+        interval(0, 70000, 1.0)
+      ),
+      regions = list(
+        region(intron, 0, 15000),
+        region(exon, 15000, 55000),
+        region(hotspot, 55000, 70000)
+      )
+    )
+  )
+)
+
+stats <- list(
+  every(10, mean_fitness, genetic_load, n_seg),
+  at(40, mutation_histogram, site_frequency_spectrum),
+  at_after(start = 35, pairwise_similarity(jaccard))
+)
