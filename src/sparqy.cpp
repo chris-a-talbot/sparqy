@@ -108,6 +108,7 @@ Simulator::Simulator(const SimParams& p)
     mutation_heterozygous_fitness_factor_.resize(initial_capacity, 1.0);
     mutation_masking_coefficient_.resize(initial_capacity, 0.0);
     mutation_type_index_.resize(initial_capacity, 0);
+    mutation_origin_generation_.resize(initial_capacity, 0u);
     parent_copy_counts_.resize(initial_capacity, 0);
     offspring_copy_counts_.resize(initial_capacity, 0);
 }
@@ -162,7 +163,8 @@ void Simulator::step() {
 
     // Build the offspring generation and compute the fitness; compute masked bonus if needed
     build_offspring_generation_and_compute_fitness(
-        statistics_plan.need_realized_masking_bonus);
+        statistics_plan.need_realized_masking_bonus,
+        current_generation);
 
     // Finalize the offspring generation and update the mutation counts
     finalize_offspring_generation();
@@ -197,6 +199,7 @@ void Simulator::reserve_mutation_metadata_capacity(uint32_t expected_new_mutatio
     mutation_heterozygous_fitness_factor_.resize(new_capacity, 1.0);
     mutation_masking_coefficient_.resize(new_capacity, 0.0);
     mutation_type_index_.resize(new_capacity, 0);
+    mutation_origin_generation_.resize(new_capacity, 0u);
     parent_copy_counts_.resize(new_capacity, 0);
     offspring_copy_counts_.resize(new_capacity, 0);
 }
@@ -333,7 +336,8 @@ void Simulator::sample_crossover_breakpoints(RNG& rng,
 */
 void Simulator::create_new_gamete_mutations(RNG& rng,
                                             OffspringBlockScratch& scratch,
-                                            std::atomic<uint32_t>& next_mutation_id) {
+                                            std::atomic<uint32_t>& next_mutation_id,
+                                            uint64_t current_generation) {
     uint32_t n_new_mutations = use_fast_mutation_poisson_
                              ? rng.poisson_precomputed(exp_neg_mutation_lambda_)
                              : rng.poisson(mutation_lambda_);
@@ -362,6 +366,7 @@ void Simulator::create_new_gamete_mutations(RNG& rng,
         mutation_masking_coefficient_[mutation_id] =
             additive_dominance ? 0.0 : s * (0.5 - h);
         mutation_type_index_[mutation_id] = mutation_type_index;
+        mutation_origin_generation_[mutation_id] = current_generation;
         parent_copy_counts_[mutation_id] = 0;
         offspring_copy_counts_[mutation_id] = 0;
 
@@ -392,7 +397,8 @@ void Simulator::build_recombined_gamete(RNG& rng,
                                         OffspringBlockScratch& scratch,
                                         uint32_t first_parent_haplotype,
                                         uint32_t second_parent_haplotype,
-                                        std::atomic<uint32_t>& next_mutation_id) {
+                                        std::atomic<uint32_t>& next_mutation_id,
+                                        uint64_t current_generation) {
     const uint32_t haplotype_count = (uint32_t)(2 * p_.N);
     const uint64_t first_parent_end =
         parent_population_.haplotype_offsets[first_parent_haplotype + 1];
@@ -554,7 +560,7 @@ void Simulator::build_recombined_gamete(RNG& rng,
         second_parent_cursor = second_parent_chromosome_end;
     }
 
-    create_new_gamete_mutations(rng, scratch, next_mutation_id);
+    create_new_gamete_mutations(rng, scratch, next_mutation_id, current_generation);
 
     auto& offspring_block = scratch.offspring_block_mutation_ids;
     const auto& inherited_mutations = scratch.inherited_gamete_mutation_ids;
@@ -585,7 +591,8 @@ void Simulator::build_recombined_gamete(RNG& rng,
 // ===========================================================================
 
 void Simulator::build_offspring_generation_and_compute_fitness(
-    bool compute_homozygous_genome_fitness) {
+    bool compute_homozygous_genome_fitness,
+    uint64_t current_generation) {
     const bool profiling_enabled = p_.enable_profiling;
     std::atomic<uint32_t> next_mutation_id(next_unused_mutation_id_);
     mutation_ids_created_this_generation_.clear();
@@ -652,7 +659,8 @@ void Simulator::build_offspring_generation_and_compute_fitness(
                                     scratch,
                                     first_parent_haplotype_a,
                                     first_parent_haplotype_b,
-                                    next_mutation_id);
+                                    next_mutation_id,
+                                    current_generation);
 
             const size_t offspring_haplotype1_start = offspring_block.size();
             offspring_population_.haplotype_offsets[(size_t)(2 * individual_index + 1)] =
@@ -661,7 +669,8 @@ void Simulator::build_offspring_generation_and_compute_fitness(
                                     scratch,
                                     second_parent_haplotype_a,
                                     second_parent_haplotype_b,
-                                    next_mutation_id);
+                                    next_mutation_id,
+                                    current_generation);
 
             const size_t offspring_haplotype1_end = offspring_block.size();
             const uint32_t* const offspring_mutation_ids = offspring_block.data();

@@ -11,6 +11,7 @@
 #include "sparqy.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -203,6 +204,58 @@ std::string format_uint64(uint64_t value) {
     return std::to_string((unsigned long long)value);
 }
 
+int parse_int_argument(const std::string& text, const char* name) {
+    try {
+        size_t consumed = 0u;
+        const long long value = std::stoll(text, &consumed, 10);
+        if (consumed != text.size()) {
+            throw std::runtime_error("");
+        }
+        if (value < (long long)std::numeric_limits<int>::min()
+            || value > (long long)std::numeric_limits<int>::max()) {
+            throw std::runtime_error("");
+        }
+        return (int)value;
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "sparqy: invalid " + std::string(name) + " value '" + text + "'");
+    }
+}
+
+double parse_double_argument(const std::string& text, const char* name) {
+    try {
+        size_t consumed = 0u;
+        const double value = std::stod(text, &consumed);
+        if (consumed != text.size() || !std::isfinite(value)) {
+            throw std::runtime_error("");
+        }
+        return value;
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "sparqy: invalid " + std::string(name) + " value '" + text + "'");
+    }
+}
+
+uint64_t parse_uint64_argument(const std::string& text, const char* name) {
+    if (!text.empty() && text[0] == '-') {
+        throw std::runtime_error(
+            "sparqy: invalid " + std::string(name) + " value '" + text + "'");
+    }
+
+    try {
+        size_t consumed = 0u;
+        const unsigned long long value = std::stoull(text, &consumed, 10);
+        if (consumed != text.size()
+            || value > (unsigned long long)std::numeric_limits<uint64_t>::max()) {
+            throw std::runtime_error("");
+        }
+        return (uint64_t)value;
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "sparqy: invalid " + std::string(name) + " value '" + text + "'");
+    }
+}
+
 bool has_profile_flag(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--profile") == 0) return true;
@@ -242,8 +295,8 @@ void print_profile_summary(const ProfileAccumulator& accumulator,
 void print_usage() {
     std::fputs(
         "Usage:\n"
-        "  sparqy [N] [L] [mu] [rho] [s] [G] [out_interval] [h] [seed] [threads] [--stats=LIST] [--profile] [--alias-builder=MODE]\n"
-        "  sparqy --config MODEL.sparqy [--profile] [--alias-builder=MODE]\n"
+        "  sparqy [N] [L] [mu] [rho] [s] [G] [out_interval] [h] [seed] [threads] [--stats=LIST] [--profile] [--alias-builder=MODE] [--export-slim PREFIX]\n"
+        "  sparqy --config MODEL.sparqy [--profile] [--alias-builder=MODE] [--export-slim PREFIX]\n"
         "\n"
         "Legacy positional mode builds a single chromosome with one mutation type.\n"
         "Config mode exposes the full SimParams model surface through an R-style config file.\n"
@@ -251,6 +304,8 @@ void print_usage() {
         "for histogram and site-frequency-spectrum outputs.\n"
         "Config mode does not accept --stats=LIST; declare stats in the config file.\n"
         "Profiling summary is printed to stderr so stdout stays machine-readable.\n"
+        "--export-slim PREFIX writes PREFIX.txt in SLiM's text population format\n"
+        "plus a matching PREFIX.slim bootstrap script that imports it.\n"
         "Alias builder modes: auto (default), sequential, parallel, parallel_psa_plus.\n"
         "Auto chooses sequential for single-thread or N < 10000 runs, and\n"
         "parallel_psa_plus otherwise.\n"
@@ -298,10 +353,36 @@ bool find_config_path(int argc, char** argv, std::string& config_path) {
     return false;
 }
 
+bool find_slim_export_prefix(int argc, char** argv, std::string& output_prefix) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--export-slim") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("sparqy: --export-slim requires a prefix");
+            }
+            output_prefix = argv[i + 1];
+            if (output_prefix.empty()) {
+                throw std::runtime_error("sparqy: --export-slim requires a prefix");
+            }
+            return true;
+        }
+        const std::string prefix = "--export-slim=";
+        if (arg.rfind(prefix, 0) == 0) {
+            output_prefix = arg.substr(prefix.size());
+            if (output_prefix.empty()) {
+                throw std::runtime_error("sparqy: --export-slim requires a prefix");
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 int run_legacy_mode(int argc,
                     char** argv,
                     bool enable_profile,
-                    ParentSamplerBuildMode requested_parent_sampler_build_mode) {
+                    ParentSamplerBuildMode requested_parent_sampler_build_mode,
+                    const std::string& slim_export_prefix) {
     SimParams p;
     p.enable_profiling = enable_profile;
     p.parent_sampler_build_mode = requested_parent_sampler_build_mode;
@@ -317,6 +398,11 @@ int run_legacy_mode(int argc,
             continue;
         }
         if (arg.rfind("--alias-builder=", 0) == 0) continue;
+        if (arg == "--export-slim") {
+            ++i;
+            continue;
+        }
+        if (arg.rfind("--export-slim=", 0) == 0) continue;
         if (arg.rfind("--stats=", 0) == 0) {
             if (!parse_stats_flag(arg, requested_kinds)) return 1;
             continue;
@@ -324,16 +410,54 @@ int run_legacy_mode(int argc,
         positional_args.push_back(arg);
     }
 
-    p.N       = (positional_args.size() > 0u) ? std::atoi(positional_args[0].c_str()) : 1000;
-    const int L = (positional_args.size() > 1u) ? std::atoi(positional_args[1].c_str()) : 100000;
-    p.mu      = (positional_args.size() > 2u) ? std::atof(positional_args[2].c_str()) : 1e-7;
-    p.rho     = (positional_args.size() > 3u) ? std::atof(positional_args[3].c_str()) : 0.01;
-    const double s = (positional_args.size() > 4u) ? std::atof(positional_args[4].c_str()) : -0.01;
-    p.G       = (positional_args.size() > 5u) ? std::atoi(positional_args[5].c_str()) : 100;
-    int out_interval = (positional_args.size() > 6u) ? std::atoi(positional_args[6].c_str()) : 10;
-    const double h = (positional_args.size() > 7u) ? std::atof(positional_args[7].c_str()) : 0.5;
-    p.seed    = (positional_args.size() > 8u) ? std::atoll(positional_args[8].c_str()) : 42;
-    p.threads = (positional_args.size() > 9u) ? std::atoi(positional_args[9].c_str()) : 0;
+    if (positional_args.size() > 10u) {
+        throw std::runtime_error(
+            "sparqy: legacy positional mode accepts at most 10 positional arguments");
+    }
+
+    p.N       = (positional_args.size() > 0u)
+                  ? parse_int_argument(positional_args[0], "N")
+                  : 1000;
+    const int L = (positional_args.size() > 1u)
+                    ? parse_int_argument(positional_args[1], "L")
+                    : 100000;
+    p.mu      = (positional_args.size() > 2u)
+                  ? parse_double_argument(positional_args[2], "mu")
+                  : 1e-7;
+    p.rho     = (positional_args.size() > 3u)
+                  ? parse_double_argument(positional_args[3], "rho")
+                  : 0.01;
+    const double s = (positional_args.size() > 4u)
+                       ? parse_double_argument(positional_args[4], "s")
+                       : -0.01;
+    p.G       = (positional_args.size() > 5u)
+                  ? parse_int_argument(positional_args[5], "G")
+                  : 100;
+    int out_interval = (positional_args.size() > 6u)
+                         ? parse_int_argument(positional_args[6], "out_interval")
+                         : 10;
+    const double h = (positional_args.size() > 7u)
+                       ? parse_double_argument(positional_args[7], "h")
+                       : 0.5;
+    p.seed    = (positional_args.size() > 8u)
+                  ? parse_uint64_argument(positional_args[8], "seed")
+                  : 42u;
+    p.threads = (positional_args.size() > 9u)
+                  ? parse_int_argument(positional_args[9], "threads")
+                  : 0;
+
+    if (p.N <= 0) throw std::runtime_error("sparqy: N must be positive");
+    if (L <= 0) throw std::runtime_error("sparqy: L must be positive");
+    if (p.mu < 0.0) throw std::runtime_error("sparqy: mu must be non-negative");
+    if (p.rho < 0.0) throw std::runtime_error("sparqy: rho must be non-negative");
+    if (p.G <= 0) throw std::runtime_error("sparqy: G must be positive");
+    if (out_interval <= 0) {
+        throw std::runtime_error("sparqy: out_interval must be positive");
+    }
+    if (p.threads < 0) {
+        throw std::runtime_error("sparqy: threads must be non-negative");
+    }
+
     const bool any_stats = !requested_kinds.empty();
     const int effective_threads = resolve_simulation_thread_count(p.threads);
     p.parent_sampler_build_mode = resolve_parent_sampler_build_mode(
@@ -461,13 +585,32 @@ int run_legacy_mode(int argc,
     if (p.enable_profiling) {
         print_profile_summary(profile_accumulator, stderr);
     }
+    if (!slim_export_prefix.empty()) {
+        const SlimExportResult export_result =
+            sim.export_state_for_slim(slim_export_prefix);
+        std::fprintf(stderr,
+                     "sparqy: wrote SLiM export files: %s and %s\n",
+                     export_result.population_path.c_str(),
+                     export_result.loader_script_path.c_str());
+        if (export_result.import_only_mutation_type_count > 0u) {
+            std::fprintf(stderr,
+                         "sparqy: generated %u import-only mutation types for standing variation with mutation-specific dominance\n",
+                         export_result.import_only_mutation_type_count);
+        }
+        if (export_result.zero_selection_dominance_fallback_count > 0u) {
+            std::fprintf(stderr,
+                         "sparqy: warning: %u zero-selection mutations from distributed-dominance types used fallback dominance means in the SLiM export\n",
+                         export_result.zero_selection_dominance_fallback_count);
+        }
+    }
     return 0;
 }
 
 int run_config_mode(const std::string& config_path,
                     bool enable_profile,
                     bool cli_has_alias_builder,
-                    ParentSamplerBuildMode requested_parent_sampler_build_mode) {
+                    ParentSamplerBuildMode requested_parent_sampler_build_mode,
+                    const std::string& slim_export_prefix) {
     const LoadedConfig loaded = load_config_file(config_path);
     SimParams p = loaded.params;
     p.enable_profiling = p.enable_profiling || enable_profile;
@@ -564,6 +707,24 @@ int run_config_mode(const std::string& config_path,
     if (p.enable_profiling) {
         print_profile_summary(profile_accumulator, stderr);
     }
+    if (!slim_export_prefix.empty()) {
+        const SlimExportResult export_result =
+            sim.export_state_for_slim(slim_export_prefix);
+        std::fprintf(stderr,
+                     "sparqy: wrote SLiM export files: %s and %s\n",
+                     export_result.population_path.c_str(),
+                     export_result.loader_script_path.c_str());
+        if (export_result.import_only_mutation_type_count > 0u) {
+            std::fprintf(stderr,
+                         "sparqy: generated %u import-only mutation types for standing variation with mutation-specific dominance\n",
+                         export_result.import_only_mutation_type_count);
+        }
+        if (export_result.zero_selection_dominance_fallback_count > 0u) {
+            std::fprintf(stderr,
+                         "sparqy: warning: %u zero-selection mutations from distributed-dominance types used fallback dominance means in the SLiM export\n",
+                         export_result.zero_selection_dominance_fallback_count);
+        }
+    }
     return 0;
 }
 
@@ -582,17 +743,23 @@ int main(int argc, char** argv) {
         const ParentSamplerBuildMode parent_sampler_build_mode =
             find_parent_sampler_build_mode(argc, argv);
         std::string config_path;
+        std::string slim_export_prefix;
+        find_slim_export_prefix(argc, argv, slim_export_prefix);
         if (find_config_path(argc, argv, config_path)) {
             if (has_stats_flag(argc, argv)) {
                 throw std::runtime_error(
                     "sparqy: --stats=LIST is only supported in legacy positional mode; declare stats in the config file");
             }
             return run_config_mode(
-                config_path, enable_profile, cli_has_alias_builder, parent_sampler_build_mode);
+                config_path,
+                enable_profile,
+                cli_has_alias_builder,
+                parent_sampler_build_mode,
+                slim_export_prefix);
         }
 
         return run_legacy_mode(
-            argc, argv, enable_profile, parent_sampler_build_mode);
+            argc, argv, enable_profile, parent_sampler_build_mode, slim_export_prefix);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "%s\n", e.what());
         return 1;

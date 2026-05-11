@@ -362,6 +362,63 @@ void test_overlapping_schedules_coalesce_per_generation() {
             "expected overlapping schedules to coalesce at generation 3");
 }
 
+void test_never_firing_schedule_stays_inactive() {
+    const std::string text =
+        "constants <- list()\n"
+        "config <- list(\n"
+        "  N = 10,\n"
+        "  G = 5,\n"
+        "  mu = 1e-7,\n"
+        "  rho = 0.5,\n"
+        "  seed = 1,\n"
+        "  threads = 1,\n"
+        "  mutation_types = list(m = list(selection = constant(0.0), dominance = additive())),\n"
+        "  region_types = list(r = list(mutation_scale = 1.0, weights = c(m = 1))),\n"
+        "  chromosomes = list(chr1 = list(\n"
+        "    length = 10,\n"
+        "    recombination_intervals = list(interval(0, 10, 1.0)),\n"
+        "    regions = list(region(r, 0, 10))\n"
+        "  ))\n"
+        ")\n"
+        "stats <- list(\n"
+        "  every(10, mean_fitness)\n"
+        ")\n";
+    TempConfigFile file(text);
+    const LoadedConfig loaded = load_config_file(file.path);
+    require(!loaded.has_statistics,
+            "expected never-firing schedules to leave statistics disabled");
+    require(loaded.warnings.size() == 1u,
+            "expected one warning for a never-firing schedule");
+    Simulator simulator(loaded.params);
+    for (int generation = 0; generation < loaded.params.G; ++generation) {
+        simulator.step();
+        require(simulator.latest_statistics().statistics.empty(),
+                "expected never-firing schedules to stay inactive");
+    }
+}
+
+void test_oversized_coordinate_fails() {
+    const std::string text =
+        "constants <- list()\n"
+        "config <- list(\n"
+        "  N = 10,\n"
+        "  G = 1,\n"
+        "  mu = 0.0,\n"
+        "  rho = 0.0,\n"
+        "  seed = 1,\n"
+        "  threads = 1,\n"
+        "  mutation_types = list(m = list(selection = constant(0.0), dominance = additive())),\n"
+        "  region_types = list(r = list(mutation_scale = 1.0, weights = c(m = 1))),\n"
+        "  chromosomes = list(chr1 = list(\n"
+        "    length = 4294967301,\n"
+        "    recombination_intervals = list(interval(0, 4294967301, 1.0)),\n"
+        "    regions = list(region(r, 0, 4294967301))\n"
+        "  ))\n"
+        ")\n"
+        "stats <- list()\n";
+    expect_parse_error(text, "is out of range for uint32_t");
+}
+
 }  // namespace
 
 int main() {
@@ -378,6 +435,8 @@ int main() {
         test_invalid_range_fails();
         test_invalid_distribution_parameters_fail();
         test_overlapping_schedules_coalesce_per_generation();
+        test_never_firing_schedule_stays_inactive();
+        test_oversized_coordinate_fails();
     } catch (const std::exception& e) {
         std::cerr << "config_loader_test failed: " << e.what() << "\n";
         return 1;

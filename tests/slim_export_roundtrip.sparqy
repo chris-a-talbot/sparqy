@@ -1,0 +1,43 @@
+constants <- list()
+
+config <- list(
+  N = 20,
+  G = 8,
+  mu = 5e-4,
+  rho = 0.2,
+  seed = 12345,
+  threads = 1,
+  mutation_types = list(
+    linear_del = list(
+      selection = normal(-0.02, 0.01, -0.2, 0.0),
+      dominance = linear_from_s(0.45, -2.5, 0.05, 0.9)
+    ),
+    dist_ben = list(
+      selection = exponential(0.02, 0.0, 0.2),
+      dominance = distributed(beta(2.0, 4.0, 0.0, 1.0))
+    ),
+    neutral = list(
+      selection = constant(0.0),
+      dominance = additive()
+    )
+  ),
+  region_types = list(
+    mixed = list(
+      mutation_scale = 1.0,
+      weights = c(linear_del = 3, dist_ben = 1, neutral = 1)
+    )
+  ),
+  chromosomes = list(
+    chr1 = list(
+      length = 400,
+      recombination_intervals = list(
+        interval(0, 400, 1.0)
+      ),
+      regions = list(
+        region(mixed, 0, 400)
+      )
+    )
+  )
+)
+
+stats <- list()

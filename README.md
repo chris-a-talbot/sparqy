@@ -42,13 +42,6 @@ exposes the full feature set.
   produces a contiguous block of `N/P` offspring into thread-local scratch
   buffers; the parent population is read-only during reproduction, so the
   hot loop never takes a lock.
-- **Cache-line-aligned per-thread scratch** (`alignas(64)`) prevents
-  false sharing on the vector headers each thread mutates.
-- **Lock-free mutation ID allocation.** Recyclable IDs are pre-distributed
-  to per-thread stacks before the parallel region; threads fall back to a
-  shared atomic cursor only after exhausting their local pool. Unused
-  pre-distributed IDs are returned to the global pool after the parallel
-  region so they cannot leak across generations.
 - **Three alias-table builders** for parent sampling, plus a smart
   default `auto` mode selectable via `--alias-builder=`:
     - `auto` — chooses `sequential` for single-thread runs and for
@@ -64,15 +57,10 @@ exposes the full feature set.
       one extreme outlier among uniform weights), which is why `auto`
       only selects it once the job is large enough to amortize the extra
       setup cost.
-- **Deferred sparse counting.** Each thread inserts mutation IDs into a
-  thread-local open-addressed `SparseCountMap` in a separate pass *after*
-  the recombination merge, so the hash-map probe traffic never pollutes
-  L1 during the recombination hot loop.
 - **Fused fitness evaluation** keeps offspring mutation data hot in L1
   during fitness computation.
-- **Per-thread `xoshiro256**` RNG streams** seeded by `long_jump()`
-  advances of 2^192 draws, guaranteeing non-overlapping sequences for any
-  realistic simulation length.
+- **Poisson event sampling** uses exact low-rate draws for
+  `lambda < 30` and a rounded normal approximation at higher rates.
 
 ## Requirements
 
@@ -94,13 +82,12 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-This produces three main binaries under `build/`:
+This produces the main simulator binary under `build/`:
 
 - `build/sparqy` — the simulator.
-- `build/alias_bench` — a standalone microbenchmark and correctness
-  harness for the three alias-table builders.
-- `build/config_loader_bench` — a microbenchmark for config-file loading
-  overhead.
+
+The test executable `config_loader_test` is also built for use with
+`ctest`.
 
 The default release flags are
 `-O3 -march=native -mtune=native -ffast-math -funroll-loops`. For
@@ -122,6 +109,10 @@ microarchitecture (for example `-march=znver3` for AMD EPYC Milan).
 
 # Full biological model from a configuration file.
 ./build/sparqy --config examples/full_power_model.sparqy
+
+# Export the ending population state plus a matching SLiM bootstrap.
+./build/sparqy --config examples/full_power_model.sparqy \
+    --export-slim artifacts/full_power_model_final
 ```
 
 Setting `threads=0` uses `omp_get_max_threads()`, which respects the
@@ -157,7 +148,7 @@ sparqy N L mu rho s G out_interval h seed threads [flags]
 For the full biological model:
 
 ```text
-sparqy --config path/to/model.sparqy [--profile] [--alias-builder=MODE]
+sparqy --config path/to/model.sparqy [--profile] [--alias-builder=MODE] [--export-slim PREFIX]
 ```
 
 The configuration language is described below.
@@ -181,6 +172,10 @@ The configuration language is described below.
   `parallel_psa_plus` (PSA+). `auto` chooses `sequential` for
   single-thread runs and for `N < 10000`, and `parallel_psa_plus`
   otherwise.
+- `--export-slim PREFIX` — writes `PREFIX.txt` in SLiM 5.x text
+  population-file format plus `PREFIX.slim`, a bootstrap script that
+  recreates the sparqy model structure and imports the exported state
+  with `readFromPopulationFile()`.
 
 ## Configuration file format
 
@@ -319,6 +314,28 @@ Scalar statistics populate the `scalar_value` column; histogram and
 site-frequency-spectrum statistics populate their respective vector
 columns as comma-separated integer lists.
 
+## SLiM export
+
+`--export-slim PREFIX` is intended for handing sparqy's final segregating
+state to `SLiM 5.x`. The generated `PREFIX.slim` script is immediately
+runnable: it recreates the model structure expected by
+`readFromPopulationFile()`, imports `PREFIX.txt`, prints a short
+`sparqy_import_ok` summary, and then calls `sim.simulationFinished()`.
+Delete that last line if you want the imported state to keep evolving in
+SLiM.
+
+Two limits matter:
+
+- The export preserves the **current segregating mutations and diploid
+  genotypes**, not the full substitution history. sparqy collapses fixed
+  mutations into a global fitness factor, and SLiM's text
+  `readFromPopulationFile()` path likewise does not import substitutions.
+- Variable-dominance standing variation is preserved by generating
+  **import-only mutation types** whose fixed dominance coefficients match
+  the mutations currently in the population. Future new mutations in the
+  generated SLiM script still use the original sparqy mutation-type
+  rules.
+
 ## Paired SLiM examples
 
 For each checked-in `examples/*.sparqy` config, the repository now
@@ -340,24 +357,6 @@ pairwise-similarity estimates rather than exhaustive all-pairs
 calculation so it remains practical as an example script; the smaller
 paired examples use exact pairwise calculations.
 
-## Validation
-
-A repository-local validation suite lives under `validation_suite/` and is
-driven by `run_suite.py`. It covers four tracks:
-
-- `accuracy` — biological agreement against [SLiM](https://messerlab.org/slim/) on matched scenarios.
-- `speed` — matched wall-clock benchmarking against SLiM across all three
-  alias builders.
-- `scaling` — sparqy-only thread-scaling curves, including population
-  sizes too large for SLiM comparison.
-- `profile` — per-phase runtime breakdowns from `--profile` runs.
-
-Larger presets (`full`, `extreme`) are intended for HPC nodes; wrapper
-scripts for SLURM-based clusters are provided as
-`validation_suite/perlmutter_full_suite.sh` and
-`validation_suite/perlmutter_extreme_suite.sh`. Per-process peak resident
-memory is recorded automatically on Linux via `/proc/<pid>/status`.
-
 ## Reproducibility
 
 - **Single-thread runs are deterministic** for a given `seed`, model
@@ -376,9 +375,9 @@ The implementation is built around three data representations.
 
 1. **Per-mutation metadata tables.** Every distinct mutation has a single
    entry in arrays indexed by mutation ID: locus, homozygous and
-   heterozygous fitness factors, masking coefficient, and mutation type.
-   These tables are grown serially before each parallel region and are
-   read-only during reproduction.
+   heterozygous fitness factors, masking coefficient, mutation type, and
+   origin generation. These tables are grown serially before each
+   parallel region and are read-only during reproduction.
 2. **Packed populations.** A population is a flat `mutation_ids` array
    plus a `haplotype_offsets` index. Haplotype `h` occupies the sorted
    slice `[offsets[h], offsets[h+1])`. Recombination is implemented as a

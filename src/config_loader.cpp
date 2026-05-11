@@ -775,6 +775,17 @@ uint64_t resolve_uint64(const std::string& path,
     return (uint64_t)signed_value;
 }
 
+uint32_t resolve_uint32(const std::string& path,
+                        const Expr& expr,
+                        ConstantScope& constants,
+                        const std::string& context) {
+    const uint64_t value = resolve_uint64(path, expr, constants, context);
+    if (value > (uint64_t)std::numeric_limits<uint32_t>::max()) {
+        throw_config_error(path, expr.loc, context + " is out of range for uint32_t");
+    }
+    return (uint32_t)value;
+}
+
 bool resolve_bool(const std::string& path,
                   const Expr& expr,
                   ConstantScope& constants,
@@ -1479,6 +1490,7 @@ void parse_stats_section(const std::string& path,
     for (const PendingStatisticSpec& pending : pending_specs) {
         StatisticRequest request;
         request.kind = pending.kind;
+        request.every_generation = pending.every_generation;
         request.similarity_metric = pending.metric;
         if (!pending.every_generation) {
             request.generations = pending.generations;
@@ -1486,7 +1498,13 @@ void parse_stats_section(const std::string& path,
         loaded.params.statistic_requests.push_back(std::move(request));
     }
 
-    loaded.has_statistics = !loaded.params.statistic_requests.empty();
+    loaded.has_statistics = false;
+    for (const StatisticRequest& request : loaded.params.statistic_requests) {
+        if (request.every_generation || !request.generations.empty()) {
+            loaded.has_statistics = true;
+            break;
+        }
+    }
 }
 
 std::unordered_map<std::string, const Expr*> named_entries(const std::string& path,
@@ -1646,12 +1664,12 @@ RecIntervalSpec parse_interval_spec(const std::string& path,
     const Expr& interval_expr = expect_call_named(path, expr, "interval", "recombination interval");
     ArgReader args(path, interval_expr);
     RecIntervalSpec interval;
-    interval.start = (uint32_t)resolve_uint64(
+    interval.start = resolve_uint32(
         path,
         args.required("start", "interval"),
         constants,
         "interval start");
-    interval.end = (uint32_t)resolve_uint64(
+    interval.end = resolve_uint32(
         path,
         args.required("end", "interval"),
         constants,
@@ -1688,12 +1706,12 @@ ChromosomeRegionSpec parse_region_placement(const std::string& path,
     }
     ChromosomeRegionSpec region;
     region.region_type_index = region_it->second;
-    region.start = (uint32_t)resolve_uint64(
+    region.start = resolve_uint32(
         path,
         args.required("start", "region"),
         constants,
         "region start");
-    region.end = (uint32_t)resolve_uint64(
+    region.end = resolve_uint32(
         path,
         args.required("end", "region"),
         constants,
@@ -1779,7 +1797,7 @@ void parse_chromosomes(const std::string& path,
                                      chromosome_spec.loc);
 
         ChromosomeSpec chromosome;
-        chromosome.length = (uint32_t)resolve_uint64(
+        chromosome.length = resolve_uint32(
             path, *fields.at("length"), constants, "chromosomes$" + name + "$length");
         if (chromosome.length == 0u) {
             throw_config_error(path,

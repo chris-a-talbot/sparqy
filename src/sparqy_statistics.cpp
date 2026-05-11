@@ -86,7 +86,7 @@ void Simulator::compile_statistics_plans() {
 
     std::vector<ScheduledStatisticRequest> scheduled_requests;
     for (const StatisticRequest& request : p_.statistic_requests) {
-        if (request.generations.empty()) {
+        if (request.every_generation) {
             add_request_to_statistics_plan(statistics_every_generation_plan_, &request);
             continue;
         }

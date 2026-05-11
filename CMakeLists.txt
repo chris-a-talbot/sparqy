@@ -21,6 +21,7 @@ add_executable(sparqy
     src/main.cpp
     src/sparqy.cpp
     src/sparqy_compile.cpp
+    src/sparqy_slim_export.cpp
     src/sparqy_statistics.cpp
 )
 target_include_directories(sparqy PRIVATE src)
@@ -33,34 +34,17 @@ target_compile_options(sparqy PRIVATE
     -funroll-loops
 )
 
-add_executable(alias_bench tests/alias_bench.cpp)
-target_include_directories(alias_bench PRIVATE src)
-target_link_libraries(alias_bench PRIVATE OpenMP::OpenMP_CXX)
-target_compile_options(alias_bench PRIVATE
-    -O3
-    -march=native
-    -mtune=native
-    -ffast-math
-    -funroll-loops
-)
-
 add_executable(config_loader_test
     src/config_loader.cpp
     src/sparqy.cpp
     src/sparqy_compile.cpp
+    src/sparqy_slim_export.cpp
     src/sparqy_statistics.cpp
     tests/config_loader_test.cpp
 )
 target_include_directories(config_loader_test PRIVATE src)
 target_link_libraries(config_loader_test PRIVATE OpenMP::OpenMP_CXX)
 add_test(NAME config_loader_test COMMAND config_loader_test)
-
-add_executable(config_loader_bench
-    src/config_loader.cpp
-    tests/config_loader_bench.cpp
-)
-target_include_directories(config_loader_bench PRIVATE src)
-target_link_libraries(config_loader_bench PRIVATE OpenMP::OpenMP_CXX)
 
 add_test(
     NAME example_configs_smoke
@@ -77,5 +61,13 @@ if(SLIM_EXECUTABLE)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_example_slim_smoke.sh
                 ${SLIM_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/examples/slim
+    )
+    add_test(
+        NAME slim_export_roundtrip
+        COMMAND /bin/sh
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_slim_export_roundtrip.sh
+                $<TARGET_FILE:sparqy>
+                ${SLIM_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/slim_export_roundtrip.sparqy
     )
 endif()

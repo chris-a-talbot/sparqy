@@ -97,7 +97,8 @@ struct RNG {
         return (x + y > 0.0) ? x / (x + y) : 0.5;
     }
 
-    // Poisson
+    // Poisson: exact product-of-uniforms path for lambda < 30, rounded
+    // normal approximation for larger lambda values.
     uint32_t poisson(double lambda) noexcept {
         if (lambda <= 0.0) return 0;
         if (lambda < 30.0) {

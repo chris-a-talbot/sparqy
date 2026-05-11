@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -91,6 +92,7 @@ ParentSamplerBuildMode resolve_parent_sampler_build_mode(
 
 struct StatisticRequest {
     StatisticKind kind = StatisticKind::mean_fitness;
+    bool every_generation = false;
     std::vector<uint64_t> generations;
     HaplotypeSimilarityMetric similarity_metric = HaplotypeSimilarityMetric::jaccard;
 };
@@ -160,6 +162,13 @@ struct GenerationProfileSnapshot {
     double total_sec = 0.0;
 };
 
+struct SlimExportResult {
+    std::string population_path;
+    std::string loader_script_path;
+    uint32_t import_only_mutation_type_count = 0;
+    uint32_t zero_selection_dominance_fallback_count = 0;
+};
+
 // alignas(64) keeps adjacent scratch objects off the same cache line.
 struct alignas(64) OffspringBlockScratch {
     std::vector<uint32_t> offspring_block_mutation_ids;
@@ -179,6 +188,7 @@ class Simulator {
 public:
     explicit Simulator(const SimParams& p);
     void step();
+    SlimExportResult export_state_for_slim(const std::string& output_prefix) const;
 
     const StatisticsSnapshot& latest_statistics() const { return latest_statistics_; }
     const GenerationProfileSnapshot& latest_profile() const { return latest_profile_; }
@@ -256,6 +266,7 @@ private:
     std::vector<double>   mutation_heterozygous_fitness_factor_;
     std::vector<double>   mutation_masking_coefficient_;
     std::vector<uint32_t> mutation_type_index_;
+    std::vector<uint64_t> mutation_origin_generation_;
 
     std::vector<uint32_t> parent_copy_counts_;
     std::vector<uint32_t> offspring_copy_counts_;
@@ -309,15 +320,18 @@ private:
 
     void     create_new_gamete_mutations(RNG& rng,
                                          OffspringBlockScratch& scratch,
-                                         std::atomic<uint32_t>& next_mutation_id);
+                                         std::atomic<uint32_t>& next_mutation_id,
+                                         uint64_t current_generation);
     void     build_recombined_gamete(RNG& rng,
                                      OffspringBlockScratch& scratch,
                                      uint32_t first_parent_haplotype,
                                      uint32_t second_parent_haplotype,
-                                     std::atomic<uint32_t>& next_mutation_id);
+                                     std::atomic<uint32_t>& next_mutation_id,
+                                     uint64_t current_generation);
 
     void build_offspring_generation_and_compute_fitness(
-        bool compute_homozygous_genome_fitness);
+        bool compute_homozygous_genome_fitness,
+        uint64_t current_generation);
     void finalize_offspring_generation();
     void compute_pairwise_haplotypic_similarity_summaries(
         bool need_jaccard,
