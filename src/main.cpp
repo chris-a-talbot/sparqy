@@ -8,6 +8,7 @@
 //      sparqy --config path/to/model.sparqy
 
 #include "config_loader.hpp"
+#include "sparqy_names.hpp"
 #include "sparqy.hpp"
 
 #include <algorithm>
@@ -24,25 +25,6 @@
 #include <vector>
 
 namespace {
-
-struct StatName {
-    const char* name;
-    StatisticKind kind;
-};
-const StatName kStatNames[] = {
-    {"mean_fitness",             StatisticKind::mean_fitness},
-    {"genetic_load",             StatisticKind::genetic_load},
-    {"realized_masking_bonus",   StatisticKind::realized_masking_bonus},
-    {"exact_B",                  StatisticKind::exact_B},
-    {"pairwise_similarity",      StatisticKind::mean_pairwise_haplotypic_similarity},
-    {"n_seg",                    StatisticKind::n_seg},
-    {"n_fixed",                  StatisticKind::n_fixed},
-    {"genome_words",             StatisticKind::genome_words},
-    {"mutation_histogram",       StatisticKind::mutation_histogram},
-    {"site_frequency_spectrum",  StatisticKind::site_frequency_spectrum},
-    {"nucleotide_diversity",     StatisticKind::nucleotide_diversity},
-    {"expected_heterozygosity",  StatisticKind::expected_heterozygosity},
-};
 
 struct ProfileField {
     const char* name;
@@ -81,79 +63,20 @@ struct ProfileAccumulator {
     }
 };
 
-const char* statistic_kind_name(StatisticKind kind) {
-    for (const StatName& sn : kStatNames) {
-        if (sn.kind == kind) return sn.name;
-    }
-    return "unknown";
-}
-
-const char* similarity_metric_name(HaplotypeSimilarityMetric metric) {
-    switch (metric) {
-        case HaplotypeSimilarityMetric::none:    return "";
-        case HaplotypeSimilarityMetric::jaccard: return "jaccard";
-        case HaplotypeSimilarityMetric::dice:    return "dice";
-        case HaplotypeSimilarityMetric::overlap: return "overlap";
-    }
-    return "";
-}
-
-const char* parent_sampler_build_mode_name(ParentSamplerBuildMode mode) {
-    switch (mode) {
-        case ParentSamplerBuildMode::automatic:         return "auto";
-        case ParentSamplerBuildMode::sequential:        return "sequential";
-        case ParentSamplerBuildMode::parallel:          return "parallel";
-        case ParentSamplerBuildMode::parallel_psa_plus: return "parallel_psa_plus";
-    }
-    return "unknown";
-}
-
 ParentSamplerBuildMode parse_parent_sampler_build_mode_value(
     const std::string& value) {
-    if (value == "auto")              return ParentSamplerBuildMode::automatic;
-    if (value == "sequential")        return ParentSamplerBuildMode::sequential;
-    if (value == "parallel")          return ParentSamplerBuildMode::parallel;
-    if (value == "parallel_psa_plus") return ParentSamplerBuildMode::parallel_psa_plus;
-    throw std::runtime_error(
-        "sparqy: --alias-builder must be 'auto', 'sequential', 'parallel', or 'parallel_psa_plus'");
-}
-
-bool has_parent_sampler_build_mode_flag(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--alias-builder") return true;
-        if (arg.rfind("--alias-builder=", 0) == 0) return true;
-    }
-    return false;
-}
-
-ParentSamplerBuildMode find_parent_sampler_build_mode(int argc, char** argv) {
     ParentSamplerBuildMode mode = ParentSamplerBuildMode::automatic;
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--alias-builder") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error(
-                    "sparqy: --alias-builder requires a value");
-            }
-            mode = parse_parent_sampler_build_mode_value(argv[++i]);
-            continue;
-        }
-        const std::string prefix = "--alias-builder=";
-        if (arg.rfind(prefix, 0) == 0) {
-            mode = parse_parent_sampler_build_mode_value(
-                arg.substr(prefix.size()));
-        }
+    if (sparqy_names::try_parse_parent_sampler_build_mode_name(value, mode)) {
+        return mode;
     }
-    return mode;
+    throw std::runtime_error(
+        "sparqy: --alias-builder must be "
+        + std::string(sparqy_names::kParentSamplerBuildModeChoicesForError));
 }
 
-// Parse a --stats=LIST argument into a set of requested kinds.
-// Returns false on unknown stat name.
-bool parse_stats_flag(const std::string& arg,
+void parse_stats_flag(const std::string& arg,
                       std::unordered_set<int>& out_kinds) {
     const std::string prefix = "--stats=";
-    if (arg.rfind(prefix, 0) != 0) return true;  // not a stats flag, ignore
     const std::string list = arg.substr(prefix.size());
 
     size_t pos = 0;
@@ -165,24 +88,124 @@ bool parse_stats_flag(const std::string& arg,
         if (name.empty()) continue;
 
         if (name == "all") {
-            for (const StatName& sn : kStatNames)
-                out_kinds.insert((int)sn.kind);
+            for (const auto& entry : sparqy_names::kStatisticKinds) {
+                out_kinds.insert((int)entry.value);
+            }
             continue;
         }
-        bool matched = false;
-        for (const StatName& sn : kStatNames) {
-            if (name == sn.name) {
-                out_kinds.insert((int)sn.kind);
-                matched = true;
-                break;
-            }
+        StatisticKind kind = StatisticKind::mean_fitness;
+        if (!sparqy_names::try_parse_statistic_kind_name(name, kind)) {
+            throw std::runtime_error("sparqy: unknown stat name '" + name + "'");
         }
-        if (!matched) {
-            std::fprintf(stderr, "sparqy: unknown stat name '%s'\n", name.c_str());
-            return false;
-        }
+        out_kinds.insert((int)kind);
     }
-    return true;
+}
+
+struct ParsedCli {
+    bool show_help = false;
+    bool enable_profile = false;
+    bool cli_has_alias_builder = false;
+    ParentSamplerBuildMode parent_sampler_build_mode =
+        ParentSamplerBuildMode::automatic;
+    bool has_config = false;
+    bool has_stats_flag = false;
+    std::string config_path;
+    std::string slim_export_prefix;
+    std::vector<std::string> positional_args;
+    std::vector<std::string> stats_flags;
+};
+
+ParsedCli parse_cli_args(int argc, char** argv) {
+    ParsedCli parsed;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            parsed.show_help = true;
+            continue;
+        }
+        if (arg == "--profile") {
+            parsed.enable_profile = true;
+            continue;
+        }
+        if (arg == "--config") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("sparqy: --config requires a path");
+            }
+            parsed.has_config = true;
+            parsed.config_path = argv[++i];
+            if (parsed.config_path.empty()) {
+                throw std::runtime_error("sparqy: --config requires a path");
+            }
+            continue;
+        }
+        const std::string config_prefix = "--config=";
+        if (arg.rfind(config_prefix, 0) == 0) {
+            parsed.has_config = true;
+            parsed.config_path = arg.substr(config_prefix.size());
+            if (parsed.config_path.empty()) {
+                throw std::runtime_error("sparqy: --config requires a path");
+            }
+            continue;
+        }
+        if (arg == "--alias-builder") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(
+                    "sparqy: --alias-builder requires a value");
+            }
+            parsed.cli_has_alias_builder = true;
+            parsed.parent_sampler_build_mode =
+                parse_parent_sampler_build_mode_value(argv[++i]);
+            continue;
+        }
+        const std::string alias_builder_prefix = "--alias-builder=";
+        if (arg.rfind(alias_builder_prefix, 0) == 0) {
+            parsed.cli_has_alias_builder = true;
+            parsed.parent_sampler_build_mode =
+                parse_parent_sampler_build_mode_value(
+                    arg.substr(alias_builder_prefix.size()));
+            continue;
+        }
+        if (arg == "--export-slim") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(
+                    "sparqy: --export-slim requires a prefix");
+            }
+            parsed.slim_export_prefix = argv[++i];
+            if (parsed.slim_export_prefix.empty()) {
+                throw std::runtime_error(
+                    "sparqy: --export-slim requires a prefix");
+            }
+            continue;
+        }
+        const std::string export_prefix = "--export-slim=";
+        if (arg.rfind(export_prefix, 0) == 0) {
+            parsed.slim_export_prefix = arg.substr(export_prefix.size());
+            if (parsed.slim_export_prefix.empty()) {
+                throw std::runtime_error(
+                    "sparqy: --export-slim requires a prefix");
+            }
+            continue;
+        }
+        if (arg.rfind("--stats=", 0) == 0) {
+            parsed.has_stats_flag = true;
+            parsed.stats_flags.push_back(arg);
+            continue;
+        }
+        parsed.positional_args.push_back(arg);
+    }
+    return parsed;
+}
+
+void validate_config_mode_args(const ParsedCli& cli) {
+    if (cli.has_stats_flag) {
+        throw std::runtime_error(
+            "sparqy: --stats=LIST is only supported in legacy positional mode; declare stats in the config file");
+    }
+    if (!cli.positional_args.empty()) {
+        throw std::runtime_error(
+            "sparqy: unexpected argument in --config mode: '"
+            + cli.positional_args.front() + "'");
+    }
 }
 
 std::string join_uint64_vector(const std::vector<uint64_t>& values) {
@@ -256,21 +279,6 @@ uint64_t parse_uint64_argument(const std::string& text, const char* name) {
     }
 }
 
-bool has_profile_flag(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--profile") == 0) return true;
-    }
-    return false;
-}
-
-bool has_stats_flag(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg.rfind("--stats=", 0) == 0) return true;
-    }
-    return false;
-}
-
 void print_profile_summary(const ProfileAccumulator& accumulator,
                            FILE* stream) {
     if (accumulator.samples == 0u) return;
@@ -333,117 +341,50 @@ void print_usage() {
         stdout);
 }
 
-bool find_config_path(int argc, char** argv, std::string& config_path) {
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--config") {
-            if (i + 1 >= argc)
-                throw std::runtime_error("sparqy: --config requires a path");
-            config_path = argv[i + 1];
-            return true;
-        }
-        const std::string prefix = "--config=";
-        if (arg.rfind(prefix, 0) == 0) {
-            config_path = arg.substr(prefix.size());
-            if (config_path.empty())
-                throw std::runtime_error("sparqy: --config requires a path");
-            return true;
-        }
-    }
-    return false;
-}
-
-bool find_slim_export_prefix(int argc, char** argv, std::string& output_prefix) {
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--export-slim") {
-            if (i + 1 >= argc) {
-                throw std::runtime_error("sparqy: --export-slim requires a prefix");
-            }
-            output_prefix = argv[i + 1];
-            if (output_prefix.empty()) {
-                throw std::runtime_error("sparqy: --export-slim requires a prefix");
-            }
-            return true;
-        }
-        const std::string prefix = "--export-slim=";
-        if (arg.rfind(prefix, 0) == 0) {
-            output_prefix = arg.substr(prefix.size());
-            if (output_prefix.empty()) {
-                throw std::runtime_error("sparqy: --export-slim requires a prefix");
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-int run_legacy_mode(int argc,
-                    char** argv,
-                    bool enable_profile,
-                    ParentSamplerBuildMode requested_parent_sampler_build_mode,
-                    const std::string& slim_export_prefix) {
+int run_legacy_mode(const ParsedCli& cli) {
     SimParams p;
-    p.enable_profiling = enable_profile;
-    p.parent_sampler_build_mode = requested_parent_sampler_build_mode;
-
-    std::vector<std::string> positional_args;
+    p.enable_profiling = cli.enable_profile;
+    p.parent_sampler_build_mode = cli.parent_sampler_build_mode;
 
     std::unordered_set<int> requested_kinds;
-    for (int i = 1; i < argc; i++) {
-        const std::string arg = argv[i];
-        if (arg == "--profile") continue;
-        if (arg == "--alias-builder") {
-            ++i;
-            continue;
-        }
-        if (arg.rfind("--alias-builder=", 0) == 0) continue;
-        if (arg == "--export-slim") {
-            ++i;
-            continue;
-        }
-        if (arg.rfind("--export-slim=", 0) == 0) continue;
-        if (arg.rfind("--stats=", 0) == 0) {
-            if (!parse_stats_flag(arg, requested_kinds)) return 1;
-            continue;
-        }
-        positional_args.push_back(arg);
+    for (const std::string& arg : cli.stats_flags) {
+        parse_stats_flag(arg, requested_kinds);
     }
 
-    if (positional_args.size() > 10u) {
+    if (cli.positional_args.size() > 10u) {
         throw std::runtime_error(
             "sparqy: legacy positional mode accepts at most 10 positional arguments");
     }
 
-    p.N       = (positional_args.size() > 0u)
-                  ? parse_int_argument(positional_args[0], "N")
+    p.N       = (cli.positional_args.size() > 0u)
+                  ? parse_int_argument(cli.positional_args[0], "N")
                   : 1000;
-    const int L = (positional_args.size() > 1u)
-                    ? parse_int_argument(positional_args[1], "L")
+    const int L = (cli.positional_args.size() > 1u)
+                    ? parse_int_argument(cli.positional_args[1], "L")
                     : 100000;
-    p.mu      = (positional_args.size() > 2u)
-                  ? parse_double_argument(positional_args[2], "mu")
+    p.mu      = (cli.positional_args.size() > 2u)
+                  ? parse_double_argument(cli.positional_args[2], "mu")
                   : 1e-7;
-    p.rho     = (positional_args.size() > 3u)
-                  ? parse_double_argument(positional_args[3], "rho")
+    p.rho     = (cli.positional_args.size() > 3u)
+                  ? parse_double_argument(cli.positional_args[3], "rho")
                   : 0.01;
-    const double s = (positional_args.size() > 4u)
-                       ? parse_double_argument(positional_args[4], "s")
+    const double s = (cli.positional_args.size() > 4u)
+                       ? parse_double_argument(cli.positional_args[4], "s")
                        : -0.01;
-    p.G       = (positional_args.size() > 5u)
-                  ? parse_int_argument(positional_args[5], "G")
+    p.G       = (cli.positional_args.size() > 5u)
+                  ? parse_int_argument(cli.positional_args[5], "G")
                   : 100;
-    int out_interval = (positional_args.size() > 6u)
-                         ? parse_int_argument(positional_args[6], "out_interval")
+    int out_interval = (cli.positional_args.size() > 6u)
+                         ? parse_int_argument(cli.positional_args[6], "out_interval")
                          : 10;
-    const double h = (positional_args.size() > 7u)
-                       ? parse_double_argument(positional_args[7], "h")
+    const double h = (cli.positional_args.size() > 7u)
+                       ? parse_double_argument(cli.positional_args[7], "h")
                        : 0.5;
-    p.seed    = (positional_args.size() > 8u)
-                  ? parse_uint64_argument(positional_args[8], "seed")
+    p.seed    = (cli.positional_args.size() > 8u)
+                  ? parse_uint64_argument(cli.positional_args[8], "seed")
                   : 42u;
-    p.threads = (positional_args.size() > 9u)
-                  ? parse_int_argument(positional_args[9], "threads")
+    p.threads = (cli.positional_args.size() > 9u)
+                  ? parse_int_argument(cli.positional_args[9], "threads")
                   : 0;
 
     if (p.N <= 0) throw std::runtime_error("sparqy: N must be positive");
@@ -513,7 +454,8 @@ int run_legacy_mode(int argc,
         p.N, L, p.mu, p.rho, s, h, p.G, (unsigned long long)p.seed, p.threads,
         any_stats ? "on" : "off",
         p.enable_profiling ? "on" : "off",
-        parent_sampler_build_mode_name(p.parent_sampler_build_mode));
+        sparqy_names::parent_sampler_build_mode_name(
+            p.parent_sampler_build_mode));
 
     Simulator sim(p);
     ProfileAccumulator profile_accumulator;
@@ -540,7 +482,7 @@ int run_legacy_mode(int argc,
         t_prev = now;
         const StatisticsSnapshot& snapshot = sim.latest_statistics();
 
-        constexpr size_t kNumKinds = 12;
+        constexpr size_t kNumKinds = sparqy_names::kStatisticKindCount;
         double  dvals[kNumKinds];
         uint64_t uvals[kNumKinds];
         for (size_t i = 0; i < kNumKinds; i++) { dvals[i] = 0.0; uvals[i] = 0; }
@@ -585,9 +527,9 @@ int run_legacy_mode(int argc,
     if (p.enable_profiling) {
         print_profile_summary(profile_accumulator, stderr);
     }
-    if (!slim_export_prefix.empty()) {
+    if (!cli.slim_export_prefix.empty()) {
         const SlimExportResult export_result =
-            sim.export_state_for_slim(slim_export_prefix);
+            sim.export_state_for_slim(cli.slim_export_prefix);
         std::fprintf(stderr,
                      "sparqy: wrote SLiM export files: %s and %s\n",
                      export_result.population_path.c_str(),
@@ -606,16 +548,12 @@ int run_legacy_mode(int argc,
     return 0;
 }
 
-int run_config_mode(const std::string& config_path,
-                    bool enable_profile,
-                    bool cli_has_alias_builder,
-                    ParentSamplerBuildMode requested_parent_sampler_build_mode,
-                    const std::string& slim_export_prefix) {
-    const LoadedConfig loaded = load_config_file(config_path);
+int run_config_mode(const ParsedCli& cli) {
+    const LoadedConfig loaded = load_config_file(cli.config_path);
     SimParams p = loaded.params;
-    p.enable_profiling = p.enable_profiling || enable_profile;
-    if (cli_has_alias_builder) {
-        p.parent_sampler_build_mode = requested_parent_sampler_build_mode;
+    p.enable_profiling = p.enable_profiling || cli.enable_profile;
+    if (cli.cli_has_alias_builder) {
+        p.parent_sampler_build_mode = cli.parent_sampler_build_mode;
     }
     const int effective_threads = resolve_simulation_thread_count(p.threads);
     p.parent_sampler_build_mode = resolve_parent_sampler_build_mode(
@@ -628,7 +566,7 @@ int run_config_mode(const std::string& config_path,
     std::fprintf(stderr,
                  "sparqy: config=%s N=%d G=%d mu=%.2e rho=%.4f seed=%llu threads=%d"
                  " mutation_types=%zu region_types=%zu chromosomes=%zu stats=%s profile=%s alias_builder=%s\n",
-                 config_path.c_str(),
+                 cli.config_path.c_str(),
                  p.N,
                  p.G,
                  p.mu,
@@ -640,7 +578,8 @@ int run_config_mode(const std::string& config_path,
                  p.chromosomes.size(),
                  loaded.has_statistics ? "on" : "off",
                  p.enable_profiling ? "on" : "off",
-                 parent_sampler_build_mode_name(p.parent_sampler_build_mode));
+                 sparqy_names::parent_sampler_build_mode_name(
+                     p.parent_sampler_build_mode));
 
     Simulator sim(p);
     ProfileAccumulator profile_accumulator;
@@ -689,8 +628,9 @@ int run_config_mode(const std::string& config_path,
                         (unsigned long long)snapshot.generation,
                         dt,
                         cumul,
-                        statistic_kind_name(stat.kind),
-                        similarity_metric_name(stat.similarity_metric),
+                        sparqy_names::statistic_kind_name(stat.kind),
+                        sparqy_names::similarity_metric_name(
+                            stat.similarity_metric),
                         scalar_value.c_str(),
                         by_type.c_str(),
                         by_chromosome.c_str(),
@@ -707,9 +647,9 @@ int run_config_mode(const std::string& config_path,
     if (p.enable_profiling) {
         print_profile_summary(profile_accumulator, stderr);
     }
-    if (!slim_export_prefix.empty()) {
+    if (!cli.slim_export_prefix.empty()) {
         const SlimExportResult export_result =
-            sim.export_state_for_slim(slim_export_prefix);
+            sim.export_state_for_slim(cli.slim_export_prefix);
         std::fprintf(stderr,
                      "sparqy: wrote SLiM export files: %s and %s\n",
                      export_result.population_path.c_str(),
@@ -732,34 +672,18 @@ int run_config_mode(const std::string& config_path,
 
 int main(int argc, char** argv) {
     try {
-        if (argc > 1 && (std::strcmp(argv[1], "--help") == 0
-                         || std::strcmp(argv[1], "-h") == 0)) {
+        const ParsedCli cli = parse_cli_args(argc, argv);
+        if (cli.show_help) {
             print_usage();
             return 0;
         }
 
-        const bool enable_profile = has_profile_flag(argc, argv);
-        const bool cli_has_alias_builder = has_parent_sampler_build_mode_flag(argc, argv);
-        const ParentSamplerBuildMode parent_sampler_build_mode =
-            find_parent_sampler_build_mode(argc, argv);
-        std::string config_path;
-        std::string slim_export_prefix;
-        find_slim_export_prefix(argc, argv, slim_export_prefix);
-        if (find_config_path(argc, argv, config_path)) {
-            if (has_stats_flag(argc, argv)) {
-                throw std::runtime_error(
-                    "sparqy: --stats=LIST is only supported in legacy positional mode; declare stats in the config file");
-            }
-            return run_config_mode(
-                config_path,
-                enable_profile,
-                cli_has_alias_builder,
-                parent_sampler_build_mode,
-                slim_export_prefix);
+        if (cli.has_config) {
+            validate_config_mode_args(cli);
+            return run_config_mode(cli);
         }
 
-        return run_legacy_mode(
-            argc, argv, enable_profile, parent_sampler_build_mode, slim_export_prefix);
+        return run_legacy_mode(cli);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "%s\n", e.what());
         return 1;

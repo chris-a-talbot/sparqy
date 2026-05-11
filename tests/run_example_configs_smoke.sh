@@ -6,14 +6,28 @@ sparqy_bin=$1
 examples_dir=$2
 
 found_example=0
+first_config_path=
 for config_path in "$examples_dir"/*.sparqy; do
     [ -e "$config_path" ] || continue
     found_example=1
+    if [ -z "$first_config_path" ]; then
+        first_config_path=$config_path
+    fi
     "$sparqy_bin" --config "$config_path" >/dev/null
 done
 
 if [ "$found_example" -eq 0 ]; then
     echo "no .sparqy examples found under $examples_dir" >&2
+    exit 1
+fi
+
+if "$sparqy_bin" --config "$first_config_path" --bogus >/dev/null 2>&1; then
+    echo "config CLI accepted an unknown flag" >&2
+    exit 1
+fi
+
+if "$sparqy_bin" --config "$first_config_path" stray >/dev/null 2>&1; then
+    echo "config CLI accepted a stray positional argument" >&2
     exit 1
 fi
 

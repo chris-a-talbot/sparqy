@@ -281,12 +281,6 @@ uint64_t Simulator::sample_mutation_locus(const CompiledMutationRegion& region, 
     return pack_locus(region.chromosome, pos);
 }
 
-/* Sample crossover breakpoints from the chromosome
-* @param rng The random number generator
-* @param scratch The offspring block scratch
-* @param chromosome The compiled chromosome
-* @param n_crossovers The number of crossovers to sample
-*/
 void Simulator::sample_crossover_breakpoints(RNG& rng,
                                              OffspringBlockScratch& scratch,
                                              const CompiledChromosome& chromosome,
@@ -329,11 +323,6 @@ void Simulator::sample_crossover_breakpoints(RNG& rng,
 // New mutation creation
 // ===========================================================================
 
-/* Create new gamete mutations
-* @param rng The random number generator
-* @param scratch The offspring block scratch
-* @param next_mutation_id The next mutation ID
-*/
 void Simulator::create_new_gamete_mutations(RNG& rng,
                                             OffspringBlockScratch& scratch,
                                             std::atomic<uint32_t>& next_mutation_id,
@@ -386,13 +375,6 @@ void Simulator::create_new_gamete_mutations(RNG& rng,
 // Gamete construction by recombination
 // ===========================================================================
 
-/* Build a recombined gamete
-* @param rng The random number generator
-* @param scratch The offspring block scratch
-* @param first_parent_haplotype The first parent haplotype
-* @param second_parent_haplotype The second parent haplotype
-* @param next_mutation_id The next mutation ID
-*/
 void Simulator::build_recombined_gamete(RNG& rng,
                                         OffspringBlockScratch& scratch,
                                         uint32_t first_parent_haplotype,

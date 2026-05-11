@@ -1,0 +1,5 @@
+config_loader_test 2 0.146663
+example_configs_smoke 2 0.308114
+example_slim_smoke 2 2.65557
+slim_export_roundtrip 2 0.0542581
+---

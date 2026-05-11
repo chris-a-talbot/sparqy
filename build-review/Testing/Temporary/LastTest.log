@@ -1,0 +1,86 @@
+Start testing: May 11 08:54 EDT
+----------------------------------------------------------
+1/4 Testing: config_loader_test
+1/4 Test: config_loader_test
+Command: "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review/config_loader_test"
+Directory: /Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review
+"config_loader_test" start time: May 11 08:54 EDT
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"config_loader_test" end time: May 11 08:54 EDT
+"config_loader_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/4 Testing: example_configs_smoke
+2/4 Test: example_configs_smoke
+Command: "/bin/sh" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/tests/run_example_configs_smoke.sh" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review/sparqy" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples"
+Directory: /Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review
+"example_configs_smoke" start time: May 11 08:54 EDT
+Output:
+----------------------------------------------------------
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/complex_dfe_showcase.sparqy N=200 G=40 mu=8.00e-07 rho=0.8000 seed=2024 threads=0 mutation_types=6 region_types=3 chromosomes=2 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.058750 sec
+Avg sec/gen: 0.001469
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/full_power_model.sparqy N=1000 G=100 mu=1.00e-07 rho=0.5000 seed=42 threads=0 mutation_types=3 region_types=3 chromosomes=2 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.170992 sec
+Avg sec/gen: 0.001710
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/minimal_additive.sparqy N=40 G=12 mu=5.00e-06 rho=0.2500 seed=11 threads=1 mutation_types=1 region_types=1 chromosomes=1 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.001555 sec
+Avg sec/gen: 0.000130
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/minimal_fixed_dominance.sparqy N=60 G=15 mu=2.00e-06 rho=0.4000 seed=23 threads=2 mutation_types=1 region_types=1 chromosomes=1 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.002960 sec
+Avg sec/gen: 0.000197
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/stats_schedule_showcase.sparqy N=24 G=24 mu=1.00e-05 rho=0.3000 seed=101 threads=1 mutation_types=1 region_types=1 chromosomes=1 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.001496 sec
+Avg sec/gen: 0.000062
+sparqy: N=10 L=100 mu=1.00e-07 rho=0.0100 s=-0.0100 h=0.50 G=5 seed=42 threads=1 stats=on profile=off alias_builder=sequential
+Total wall-clock: 0.001038 sec
+Avg sec/gen: 0.000208
+<end of output>
+Test time =   0.62 sec
+----------------------------------------------------------
+Test Passed.
+"example_configs_smoke" end time: May 11 08:54 EDT
+"example_configs_smoke" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/4 Testing: example_slim_smoke
+3/4 Test: example_slim_smoke
+Command: "/bin/sh" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/tests/run_example_slim_smoke.sh" "/usr/local/bin/slim" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/examples/slim"
+Directory: /Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review
+"example_slim_smoke" start time: May 11 08:54 EDT
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   5.31 sec
+----------------------------------------------------------
+Test Passed.
+"example_slim_smoke" end time: May 11 08:54 EDT
+"example_slim_smoke" time elapsed: 00:00:05
+----------------------------------------------------------
+
+4/4 Testing: slim_export_roundtrip
+4/4 Test: slim_export_roundtrip
+Command: "/bin/sh" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/tests/run_slim_export_roundtrip.sh" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review/sparqy" "/usr/local/bin/slim" "/Users/cat267/Documents/Projects/recombination_simulator/sparq5/tests/slim_export_roundtrip.sparqy"
+Directory: /Users/cat267/Documents/Projects/recombination_simulator/sparq5/build-review
+"slim_export_roundtrip" start time: May 11 08:54 EDT
+Output:
+----------------------------------------------------------
+sparqy: config=/Users/cat267/Documents/Projects/recombination_simulator/sparq5/tests/slim_export_roundtrip.sparqy N=20 G=8 mu=5.00e-04 rho=0.2000 seed=12345 threads=1 mutation_types=3 region_types=1 chromosomes=1 stats=off profile=off alias_builder=sequential
+Total wall-clock: 0.000717 sec
+Avg sec/gen: 0.000090
+sparqy: wrote SLiM export files: /var/folders/wn/gnb55kx91ms2lb1g73p6tqsr0000gq/T/tmp.V4jRdXn1Px/sparqy_export_roundtrip.txt and /var/folders/wn/gnb55kx91ms2lb1g73p6tqsr0000gq/T/tmp.V4jRdXn1Px/sparqy_export_roundtrip.slim
+sparqy: generated 31 import-only mutation types for standing variation with mutation-specific dominance
+<end of output>
+Test time =   0.11 sec
+----------------------------------------------------------
+Test Passed.
+"slim_export_roundtrip" end time: May 11 08:54 EDT
+"slim_export_roundtrip" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: May 11 08:54 EDT

@@ -1,4 +1,5 @@
 #include "config_loader.hpp"
+#include "sparqy_names.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -836,42 +837,37 @@ DistKind parse_dist_kind_name(const std::string& path,
 StatisticKind parse_stat_kind_name(const std::string& path,
                                    const SourceLocation& loc,
                                    const std::string& name) {
-    if (name == "mean_fitness") return StatisticKind::mean_fitness;
-    if (name == "genetic_load") return StatisticKind::genetic_load;
-    if (name == "realized_masking_bonus") return StatisticKind::realized_masking_bonus;
-    if (name == "exact_B") return StatisticKind::exact_B;
-    if (name == "pairwise_similarity") return StatisticKind::mean_pairwise_haplotypic_similarity;
-    if (name == "n_seg") return StatisticKind::n_seg;
-    if (name == "n_fixed") return StatisticKind::n_fixed;
-    if (name == "genome_words") return StatisticKind::genome_words;
-    if (name == "mutation_histogram") return StatisticKind::mutation_histogram;
-    if (name == "site_frequency_spectrum") return StatisticKind::site_frequency_spectrum;
-    if (name == "nucleotide_diversity") return StatisticKind::nucleotide_diversity;
-    if (name == "expected_heterozygosity") return StatisticKind::expected_heterozygosity;
+    StatisticKind kind = StatisticKind::mean_fitness;
+    if (sparqy_names::try_parse_statistic_kind_name(name, kind)) {
+        return kind;
+    }
     throw_config_error(path, loc, "unknown statistic name '" + name + "'");
 }
 
 HaplotypeSimilarityMetric parse_similarity_metric_name(const std::string& path,
                                                        const SourceLocation& loc,
                                                        const std::string& name) {
-    if (name == "jaccard") return HaplotypeSimilarityMetric::jaccard;
-    if (name == "dice") return HaplotypeSimilarityMetric::dice;
-    if (name == "overlap") return HaplotypeSimilarityMetric::overlap;
+    HaplotypeSimilarityMetric metric = HaplotypeSimilarityMetric::jaccard;
+    if (sparqy_names::try_parse_similarity_metric_name(name, metric)) {
+        return metric;
+    }
     throw_config_error(path, loc, "unknown pairwise-similarity metric '" + name + "'");
 }
 
 ParentSamplerBuildMode parse_alias_builder_name(const std::string& path,
                                                 const SourceLocation& loc,
                                                 const std::string& name) {
-    if (name == "auto") return ParentSamplerBuildMode::automatic;
-    if (name == "sequential") return ParentSamplerBuildMode::sequential;
-    if (name == "parallel") return ParentSamplerBuildMode::parallel;
-    if (name == "parallel_psa_plus") return ParentSamplerBuildMode::parallel_psa_plus;
+    ParentSamplerBuildMode mode = ParentSamplerBuildMode::automatic;
+    if (sparqy_names::try_parse_parent_sampler_build_mode_name(name, mode)) {
+        return mode;
+    }
     throw_config_error(
         path,
         loc,
         "unknown alias_builder '" + name
-            + "'; expected auto, sequential, parallel, or parallel_psa_plus");
+            + "'; expected "
+            + std::string(
+                sparqy_names::kParentSamplerBuildModeChoicesForError));
 }
 
 void validate_clamp_bounds(const std::string& path,

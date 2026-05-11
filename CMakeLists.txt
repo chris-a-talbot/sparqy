@@ -16,6 +16,20 @@ if(APPLE)
 endif()
 find_package(OpenMP REQUIRED)
 
+set(SPARQY_COMPILE_OPTIONS
+    -O3
+    -march=native
+    -mtune=native
+    -ffast-math
+    -funroll-loops
+)
+
+function(configure_sparqy_target target_name)
+    target_include_directories(${target_name} PRIVATE src)
+    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
+    target_compile_options(${target_name} PRIVATE ${SPARQY_COMPILE_OPTIONS})
+endfunction()
+
 add_executable(sparqy
     src/config_loader.cpp
     src/main.cpp
@@ -24,15 +38,7 @@ add_executable(sparqy
     src/sparqy_slim_export.cpp
     src/sparqy_statistics.cpp
 )
-target_include_directories(sparqy PRIVATE src)
-target_link_libraries(sparqy PRIVATE OpenMP::OpenMP_CXX)
-target_compile_options(sparqy PRIVATE
-    -O3
-    -march=native
-    -mtune=native
-    -ffast-math
-    -funroll-loops
-)
+configure_sparqy_target(sparqy)
 
 add_executable(config_loader_test
     src/config_loader.cpp
@@ -42,8 +48,7 @@ add_executable(config_loader_test
     src/sparqy_statistics.cpp
     tests/config_loader_test.cpp
 )
-target_include_directories(config_loader_test PRIVATE src)
-target_link_libraries(config_loader_test PRIVATE OpenMP::OpenMP_CXX)
+configure_sparqy_target(config_loader_test)
 add_test(NAME config_loader_test COMMAND config_loader_test)
 
 add_test(
